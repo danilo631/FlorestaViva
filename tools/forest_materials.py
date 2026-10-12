@@ -82,18 +82,14 @@ def rock_surface(side: int):
     return Image.fromarray(np.uint8(np.clip(base,5,235)),"RGB")
 
 def create_assets(root: Path):
+    # Real CC0 PBR photos are shipped in Git, checked by SHA256 and refreshed
+    # by tools/fetch_assets.py. Never replace rocks or bark with synthetic noise.
+    for name in ("pine_bark.png","pine_bark_normal.png","rock.png","rock_normal.png"):
+        if not (root/name).is_file():
+            raise RuntimeError("Missing pinned photographic material: "+name)
     create_pine(root)
-    bark=Image.open(root/"bark.png").convert("RGB").resize((1024,1024),Image.Resampling.LANCZOS)
-    arr=np.asarray(bark,np.float32)
-    arr=arr*np.array([.72,.79,.83])[None,None,:]+np.array([9,7,5])[None,None,:]
-    pine=Image.fromarray(np.uint8(np.clip(arr,0,255)),"RGB")
-    pine.save(root/"pine_bark.png",optimize=True)
-    normal_map(pine,4.0).save(root/"pine_bark_normal.png",optimize=True)
-    rock=rock_surface(1024)
-    rock.save(root/"rock.png",optimize=True)
-    normal_map(rock,5.6).save(root/"rock_normal.png",optimize=True)
-    for name in ("pine_atlas.png","pine_normal.png","pine_bark.png","pine_bark_normal.png","rock.png","rock_normal.png"):
-        print("baked",root/name)
+    for name in ("pine_atlas.png","pine_normal.png"):
+        print("baked legacy pine cards",root/name)
 
 if __name__=="__main__":
     cli=argparse.ArgumentParser()

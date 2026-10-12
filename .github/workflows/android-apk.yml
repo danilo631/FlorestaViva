@@ -77,7 +77,6 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --disable-pip-version-check pillow numpy
-          python tools/material_maps.py --size 512
           python tools/scanned_leaf_atlas.py --size 2048
           python tools/forest_materials.py
           python tools/foliage_pack.py --tile 1024

@@ -200,7 +200,7 @@ public class MainActivity extends Activity {
             }
             android.util.Log.i("FlorestaViva",
               "GPU ASTC KTX2 textures loaded="+compressedCount+
-              "; remaining slots use PNG/ETC2-compatible RGBA fallback");
+              "; remaining slots use decoded PNG RGBA8 fallback");
             android.util.Log.i("FlorestaViva",nativeBakeWind(getAssets()));
             lastFrame=System.nanoTime();
         }

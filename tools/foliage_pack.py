@@ -10,8 +10,7 @@ UVs are transformed in the GLES shader using uAtlasRect, not repacked per mesh.
 """
 import argparse
 from pathlib import Path
-import numpy as np
-from PIL import Image, ImageFilter
+from PIL import Image
 
 LAYERS = (
     ("blades.png",None),
@@ -21,15 +20,13 @@ LAYERS = (
 )
 
 def fallback_normal(source: Image.Image, size: int) -> Image.Image:
+    # A photographic normal map cannot be derived from albedo intensity.
+    # Unsupported legacy cutouts get a physically neutral tangent normal,
+    # preserving their alpha only; measured normals come from Leaf001.
     rgba=source.convert("RGBA").resize((size,size),Image.Resampling.LANCZOS)
-    gray=np.asarray(rgba.convert("L").filter(ImageFilter.GaussianBlur(1.1)),np.float32)/255.
-    dx=(np.roll(gray,-1,axis=1)-np.roll(gray,1,axis=1))*.95
-    dy=(np.roll(gray,-1,axis=0)-np.roll(gray,1,axis=0))*.95
-    v=np.stack((-dx,-dy,np.ones_like(dx)),axis=-1)
-    v/=np.maximum(np.linalg.norm(v,axis=-1,keepdims=True),1e-6)
-    rgba_out=np.dstack((np.uint8(np.clip((v*.5+.5)*255,0,255)),
-                        np.asarray(rgba.getchannel("A"),np.uint8)))
-    return Image.fromarray(rgba_out,"RGBA")
+    out=Image.new("RGBA",(size,size),(128,128,255,255))
+    out.putalpha(rgba.getchannel("A"))
+    return out
 
 def bake(root: Path, tile: int=768) -> None:
     if tile<256 or tile%16: raise ValueError("Tile must be >=256 and multiple of 16")
