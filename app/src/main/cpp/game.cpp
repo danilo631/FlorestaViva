@@ -1013,7 +1013,17 @@ static void simulateWildlife(float dt){
             ds=125.f;
         }
         a.phase+=dt*(a.species==2?5.f:3.5f);
-        a.fleeing=ds<17.f;
+        // Bounded finite-state ecosystem AI; species react differently:
+        // resting, foraging, routine roaming, warning and escaping.
+        if(ds<17.f)a.behavior=ForestAnimalBehavior::Flee;
+        else if(ds<27.f)a.behavior=ForestAnimalBehavior::Alert;
+        else{
+            float cycle=std::fmod(a.phase*.075f+float(a.species)*.21f,4.f);
+            a.behavior=cycle<.45f?ForestAnimalBehavior::Rest:
+                       (cycle<1.80f?ForestAnimalBehavior::Graze:
+                        ForestAnimalBehavior::Roam);
+        }
+        a.fleeing=a.behavior==ForestAnimalBehavior::Flee;
         if(a.fleeing){
             a.angle=std::atan2(dx,dz);
         }else{
@@ -1023,8 +1033,17 @@ static void simulateWildlife(float dt){
                 a.angle=std::atan2(homeDX,homeDZ);
             }
         }
-        float movement=(a.fleeing?(a.species==0?5.0f:3.2f):.57f+
-              .26f*std::sin(a.phase*.38f))*dt;
+        float stepSpeed=0.f;
+        switch(a.behavior){
+            case ForestAnimalBehavior::Flee:
+                stepSpeed=a.species==0?5.0f:(a.species==2?4.2f:3.2f);break;
+            case ForestAnimalBehavior::Alert:stepSpeed=.08f;break;
+            case ForestAnimalBehavior::Graze:stepSpeed=.11f;break;
+            case ForestAnimalBehavior::Rest:stepSpeed=0.f;break;
+            case ForestAnimalBehavior::Roam:
+                stepSpeed=.56f+.23f*std::sin(a.phase*.38f);break;
+        }
+        float movement=stepSpeed*dt;
         const float nx=clampf(a.x+std::sin(a.angle)*movement,-WORLD_HALF+11,WORLD_HALF-11);
         const float nz=clampf(a.z+std::cos(a.angle)*movement,-WORLD_HALF+11,WORLD_HALF-11);
         if(riverDistance(nx,nz)>riverWidth(nz)+2.2f){

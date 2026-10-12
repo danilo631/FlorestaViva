@@ -63,8 +63,10 @@ static ModelData forestBuildFox(){
     ellipsoid(m,{0,.88f,-1.62f},{.18f,.19f,.29f},6,9);
     return m;
 }
+enum class ForestAnimalBehavior:unsigned char{Rest,Graze,Roam,Alert,Flee};
 struct ForestAnimal {
     float x=0,z=0,homeX=0,homeZ=0,angle=0,phase=0,moveSpeed=0;
     int species=0;
     bool fleeing=false;
+    ForestAnimalBehavior behavior=ForestAnimalBehavior::Roam;
 };
