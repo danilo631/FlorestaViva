@@ -129,6 +129,7 @@ static void ellipsoid(ModelData& m,Vec3 c,Vec3 scale,int rings=8,int segments=12
 }
 #include "forest_tree_mesh.hpp"
 #include "forest_undergrowth.hpp"
+#include "forest_leaf_litter.hpp"
 
 static ModelData makeCards(float width,float h,int crosses){
     ModelData m;
@@ -292,7 +293,7 @@ in vec3 vN,vP;in vec2 vUV;in float vTint,vType;
 uniform sampler2D uTex,uMaterialNormal,uMaterialRough;
 uniform vec4 uAtlasRect;
 uniform vec3 uEye,uFog,uSun;
-uniform float uLight,uCutout,uEmissive,uRoughness,uBump,uFoliage,uUseRoughnessMap;
+uniform float uLight,uCutout,uEmissive,uRoughness,uBump,uFoliage,uUseRoughnessMap,uLeafLitter;
 uniform sampler2DShadow uSunShadow;
 uniform mat4 uSunShadowVP;
 uniform float uShadowsEnabled;
@@ -346,6 +347,11 @@ void main(){
         float rough=(uUseRoughnessMap>.5)?
             clamp(texture(uMaterialRough,uv).r,.28,.98):uRoughness;
         rgb+=vec3(specGGX(n,V,L,rough)*max(nl,0.0)*uLight*.46);
+    }
+    if(uLeafLitter>.5){
+        // Warm, weathered dead leaves with variation from each patch's tint.
+        float age=.38+.32*vTint;
+        rgb*=mix(vec3(1.03,.96,.74),vec3(1.24,.83,.52),age);
     }
     if(vType>.5)rgb*=vec3(.84,1.04,.86);
     rgb+=uEmissive*vec3(.10,.44,.65);
@@ -552,11 +558,11 @@ static Mesh makeMesh(const ModelData& data){
 }
 struct ChunkData {
     Mesh terrain;
-    std::vector<Instance> broad,pine,grass,shrub,fern,seedling,stones,logs,shadow;
+    std::vector<Instance> broad,pine,grass,shrub,fern,seedling,litter,stones,logs,shadow;
 };
 struct Batches {
     std::vector<Instance> broad,pine,grass,shrub,fern,seedling,stones,logs,shadow;
-    void clear(){broad.clear();pine.clear();grass.clear();shrub.clear();fern.clear();seedling.clear();stones.clear();logs.clear();shadow.clear();}
+    void clear(){broad.clear();pine.clear();grass.clear();shrub.clear();fern.clear();seedling.clear();litter.clear();stones.clear();logs.clear();shadow.clear();}
 };
 struct Relic {float x,z;bool picked=false;};
 struct State {
@@ -574,7 +580,7 @@ struct State {
     bool windVulkan=false;
     Mesh woodHi[5],woodMid[5],leavesHi[5],leavesMid[5],leavesFar[5];
     Mesh grass,shrub,rock,fallenLog,shadow,crystal;
-    Mesh shrubBranches,shrubLeaflets,fernFronds,groundSeedlings;
+    Mesh shrubBranches,shrubLeaflets,fernFronds,groundSeedlings,leafLitter;
     std::unordered_map<int64_t,ChunkData> chunks;
     Batches batches;
     bool batchesDirty=true;
@@ -647,6 +653,15 @@ static ChunkData makeChunk(int cx,int cz){
             out.grass.push_back(ins);
         }
     }
+    // Only microclimates suitable for leaf litter receive instanced leaf piles.
+    for(int i=0;i<int(82.f*forestDensity);i++){
+        Vec3 p=samplePos();
+        float density=noise(p.x*.036f+19.f,p.z*.036f-2.f);
+        if(density<.31f || normalAt(p.x,p.z).y<.91f)continue;
+        if(std::hypot(p.x,p.z)<4.f)continue;
+        out.litter.push_back({p.x,p.y+.024f,p.z,.68f+unit(rng)*.60f,
+                              unit(rng)*2.f*PI,unit(rng),0,0});
+    }
     for(int i=0;i<3;i++){
         Vec3 p=samplePos();
         if(std::hypot(p.x,p.z)>12.f){
@@ -664,7 +679,7 @@ static void rebuildBatches(){
     Batches& b=game.batches;b.clear();
     for(auto& pair:game.chunks){const ChunkData& c=pair.second;
         append(b.broad,c.broad);append(b.pine,c.pine);append(b.grass,c.grass);
-        append(b.shrub,c.shrub);append(b.fern,c.fern);append(b.seedling,c.seedling);
+        append(b.shrub,c.shrub);append(b.fern,c.fern);append(b.seedling,c.seedling);append(b.litter,c.litter);
         append(b.stones,c.stones);append(b.logs,c.logs);append(b.shadow,c.shadow);
     }
     game.batchesDirty=false;
@@ -745,6 +760,7 @@ static void material(int index,float cutout,float wind,float emissive=0.f,float 
           (index==17?.42f:((index==11||index==13||index==5||index==6)?.64f:0.f)));
     set1(game.instProg,"uFoliage",(index==4||index==5||index==6||index==11||index==13)?1.f:0.f);
     set1(game.instProg,"uLeafFlutter",(index==11||index==13)?0.04f:0.f);
+    set1(game.instProg,"uLeafLitter",0.f);
 }
 static void update(float dt){
     dt=clampf(dt,0.f,.05f);game.t+=dt;
@@ -1068,6 +1084,16 @@ static void draw(float dt){
     material(11,.38f,.78f);instDraw(game.fernFronds,nearFern);
     material(11,.38f,.70f);instDraw(game.groundSeedlings,nearSeedlings);
     material(6,.36f,.50f);instDraw(game.shrub,midShrub);
+    // Near-field separate fallen leaves build actual layers on the forest floor.
+    std::vector<Instance> nearLitter;
+    nearLitter.reserve(500);
+    const float litterRadius=game.graphicsQuality==2?49.f:
+                            (game.graphicsQuality==0?19.f:32.f);
+    closeVegetation(game.batches.litter,nearLitter,litterRadius);
+    material(11,.33f,.05f);
+    set1(game.instProg,"uLeafLitter",1.f);
+    instDraw(game.leafLitter,nearLitter);
+    set1(game.instProg,"uLeafLitter",0.f);
     material(17,0.f,0.f);instDraw(game.rock,game.batches.stones);
     material(3,0.f,0.f);instDraw(game.fallenLog,game.batches.logs);
     if(game.collected<RELIC_COUNT){
@@ -1113,6 +1139,7 @@ static void initialize(){
     game.shrubLeaflets=makeMesh(undergrowth.shrub);
     game.fernFronds=makeMesh(undergrowth.fern);
     game.groundSeedlings=makeMesh(undergrowth.broadGroundPlant);
+    game.leafLitter=makeMesh(forestLeafLitterPatch());
     game.grass=makeMesh(makeCards(.8f,1.3f,2));
     game.shrub=makeMesh(makeCards(1.6f,1.5f,3));
     game.rock=makeMesh(forestRockMesh());game.fallenLog=makeMesh(forestFallenLog());
