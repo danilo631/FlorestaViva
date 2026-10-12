@@ -258,15 +258,19 @@
       "id": "tree_stump_01",
       "url": "https://polyhaven.com/a/tree_stump_01",
       "license": "CC0-1.0",
-      "status": "not_yet_integrated",
-      "reason": "requires glTF conversion, LOD and Android rendering"
+      "status": "integrated_after_verified_ci",
+      "author": "Rob Tuytel",
+      "resolutions": "1k glTF downloaded; 3 mobile LODs, FVME runtime",
+      "verified_action_url": "https://github.com/danilo631/FlorestaViva/actions/runs/38320647187"
     },
     {
       "id": "dead_tree_trunk_02",
       "url": "https://polyhaven.com/a/dead_tree_trunk_02",
       "license": "CC0-1.0",
-      "status": "not_yet_integrated",
-      "reason": "requires glTF conversion and LOD"
+      "status": "integrated_after_verified_ci",
+      "author": "Jenelle van Heerden (photography), Rico Cilliers (processing)",
+      "resolutions": "1k glTF downloaded; 3 mobile LODs, FVME runtime",
+      "verified_action_url": "https://github.com/danilo631/FlorestaViva/actions/runs/38320647187"
     },
     {
       "id": "tree_small_02",

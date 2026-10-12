@@ -49,8 +49,13 @@ broadleaf pode usar três fotografias CC0 diferentes.
 [tools/fetch_models.py](tools/fetch_models.py) obtém glTFs CC0
 (`tree_stump_01`, `dead_tree_trunk_02`), checa MD5 de cada arquivo,
 simplifica 3 LODs e converte para um formato binário compacto verificado
-para o Android. O renderer tem fallback seguro para geometrias antigas.
+para o Android. O renderer carrega **os dois objetos escaneados** e seleciona 3 LODs por
+distância, com fallback seguro para geometrias antigas.
+O CI [38320647187](https://github.com/danilo631/FlorestaViva/actions/runs/38320647187)
+confirmou 6 malhas LOD, compilação do APK e ELF64.
 O carregador é do formato convertido, **não** o cgltf/tinygltf ainda.
+As texturas específicas do glTF não são usadas; os objetos têm o material
+fotográfico genérico de casca até serem ligados os mapas originais.
 Veja [CREDITS.md](CREDITS.md) para fontes e licenças.
 
 ### Antes e depois — alterações de código (não screenshots)
@@ -58,10 +63,10 @@ Veja [CREDITS.md](CREDITS.md) para fontes e licenças.
 | Item | Graphics 11 | Etapas 0/1 |
 |---|---|---|
 | HUD FPS / draw calls / triângulos | Sem contadores visíveis | Overlay + Logcat implementados |
-| Material base do solo | Foto CC0 em PNG 2K | Nova seleção de fotos CC0 em 1K; integrações sujeitas a CI |
+| Material base do solo | Foto CC0 em PNG 2K | Nove famílias de fotos CC0 em 1K, checksums de origem e Android build validado |
 | Casca de árvores de folhas largas | 1 família principal | 3 famílias de fotos diferenciadas por espécie |
 | Roughness/AO | Mapas rough separados, AO parcial | ORM R=AO, G=rough, B=metal 0; shader utiliza R/G |
-| Objetos escaneados glTF | Nenhum no runtime | Conversor/loader para toco e tronco, 3 LODs; exige verificação CI |
+| Objetos escaneados glTF | Nenhum no runtime | glTF real de toco/tronco convertido, carregado no GLES, 3 LODs, validado CI |
 | Draw calls e triângulos reais | Sem dados | Contadores de GPU commands; números físicos pendentes |
 | FPS Mali-G57/Adreno 610 | 60 informado pelo usuário em outro aparelho/versão | **Ainda não medido** |
 | Screenshots reais no celular | Não anexados | **Pendentes** — preview de materiais não é screenshot |
