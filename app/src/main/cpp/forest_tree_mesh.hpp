@@ -210,12 +210,12 @@ static ForestTreeMesh forestBuildTree(int species){
                 forestRnd(rng,.63f,.92f),species,rng,sprig++,false);
         }
     }else{
-        const int layers=10;
+        const int layers=9;
         for(int layer=0;layer<layers;layer++){
             float t=float(layer)/layers;
             float level=height*(.19f+t*.71f);
             float radius=(1.f-t)*forestRnd(rng,2.5f,3.4f)+.15f;
-            int spokes=5+(layer%2);
+            int spokes=4+(layer%2);
             for(int spoke=0;spoke<spokes;spoke++){
                 float angle=2.f*PI*(float(spoke)+.35f*(layer%2))/spokes+
                             forestRnd(rng,-.17f,.17f);
@@ -227,8 +227,8 @@ static ForestTreeMesh forestBuildTree(int species){
                            .065f*(1.f-t*.65f),.009f,5,2,2.2f);
                 if(spoke%2==0)forestTube(result.woodMid,{base,tip},.055f,.009f,4,1,2.f);
                 outerTips.push_back(tip);
-                for(int group=0;group<4;group++){
-                    Vec3 center=forestMix(middle,tip,(group+.2f)/4.f);
+                for(int group=0;group<3;group++){
+                    Vec3 center=forestMix(middle,tip,(group+.2f)/3.f);
                     forestSpray(result.foliageHigh,result.foliageMid,
                         center+Vec3{forestRnd(rng,-.15f,.15f),
                             forestRnd(rng,-.20f,.20f),forestRnd(rng,-.15f,.15f)},
@@ -246,4 +246,42 @@ static ForestTreeMesh forestBuildTree(int species){
     }
     forestFarCrown(result,outerTips,conifer,height);
     return result;
+}
+
+// Rock models are irregular triangulated solids with folded silhouette.
+// Contrast this with the original ellipsoid rock primitive.
+static ModelData forestRockMesh(){
+    ModelData m;
+    constexpr int rings=11,sides=17;
+    std::mt19937 rng(92382u);
+    std::array<float,sides+1> ridge{};
+    for(int i=0;i<sides;i++)ridge[i]=forestRnd(rng,-.14f,.18f);
+    ridge[sides]=ridge[0];
+    for(int j=0;j<=rings;j++){
+        float phi=PI*float(j)/rings;
+        for(int i=0;i<=sides;i++){
+            float theta=2.f*PI*float(i)/sides;
+            float rough=1.f+.13f*std::sin(theta*4.f+phi*8.f)+
+                ridge[i]+.085f*std::sin(phi*13.f+theta*7.f);
+            Vec3 p{std::sin(phi)*std::cos(theta)*.83f*rough,
+                std::cos(phi)*.54f*rough+.06f,
+                std::sin(phi)*std::sin(theta)*.73f*rough};
+            Vec3 n=normalize({p.x/.83f,p.y/.54f,p.z/.73f});
+            m.v.push_back({p.x,p.y,p.z,n.x,n.y,n.z,
+                float(i)/sides*2.f,float(j)/rings*2.f});
+        }
+    }
+    for(int j=0;j<rings;j++)for(int i=0;i<sides;i++){
+        uint32_t a=uint32_t(j*(sides+1)+i),b=a+uint32_t(sides+1);
+        m.triangle(a,b,a+1);m.triangle(a+1,b,b+1);
+    }
+    return m;
+}
+static ModelData forestFallenLog(){
+    ModelData m;
+    forestTube(m,{{0,0,0},{.8f,.06f,-.07f},{1.85f,.14f,.06f},{2.9f,.1f,.21f}},
+        .20f,.12f,8,3,2.3f);
+    forestTube(m,{{1.25f,.06f,.0f},{1.59f,.41f,-.31f},{1.86f,.51f,-.56f}},
+        .09f,.012f,5,2,2.0f);
+    return m;
 }
