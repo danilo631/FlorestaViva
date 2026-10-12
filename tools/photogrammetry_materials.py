@@ -15,10 +15,10 @@ import time
 from PIL import Image, ImageOps
 
 ASSETS={
-    "forrest_ground_01":("grass.png","grass_normal.png"),
-    "forest_floor":("soil.png","soil_normal.png"),
-    "bark_brown_01":("bark.png","bark_normal.png"),
-    "pine_bark":("pine_bark.png","pine_bark_normal.png")
+    "forrest_ground_01":("grass.png","grass_normal.png","grass_rough.png"),
+    "forest_floor":("soil.png","soil_normal.png","soil_rough.png"),
+    "bark_brown_01":("bark.png","bark_normal.png","bark_rough.png"),
+    "pine_bark":("pine_bark.png","pine_bark_normal.png","pine_bark_rough.png")
 }
 CDN="https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k"
 
@@ -43,18 +43,19 @@ def fetch(asset:str,texture_type:str):
 
 def bake(root:Path,strict:bool):
     success=0
-    for slug,(color,normal) in ASSETS.items():
+    for slug,(color,normal,rough) in ASSETS.items():
         try:
             colorImage=fetch(slug,"diff")
             normalImage=fetch(slug,"nor_gl")
+            roughImage=fetch(slug,"rough")
             # Save files atomically only after BOTH source maps have validated.
-            for output,image in ((color,colorImage),(normal,normalImage)):
+            for output,image in ((color,colorImage),(normal,normalImage),(rough,roughImage)):
                 path=root/output
                 tmp=root/(output+".tmp")
                 image.save(tmp,format="PNG",optimize=True)
                 tmp.replace(path)
             success+=1
-            print(f"CC0 PHOTOGRAMMETRY {slug}: {colorImage.size}, {color}, {normal}",flush=True)
+            print(f"CC0 PHOTOGRAMMETRY {slug}: {colorImage.size}, {color}, {normal}, {rough}",flush=True)
         except Exception as exc:
             print("ERROR:",exc,flush=True)
             if strict: raise
