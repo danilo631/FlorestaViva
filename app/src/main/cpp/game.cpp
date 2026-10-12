@@ -210,6 +210,8 @@ static ModelData makePineLeaves(){
     cone(m,6.65f,8.85f,.80f,14);
     return m;
 }
+#include "forest_tree_mesh.hpp"
+
 static ModelData makeCards(float width,float h,int crosses){
     ModelData m;
     for(int i=0;i<crosses;i++){
@@ -296,7 +298,7 @@ layout(location=1) in vec3 aNormal;
 layout(location=2) in vec2 aUV;
 layout(location=3) in vec4 aInst;
 layout(location=4) in vec4 aMeta;
-uniform mat4 uVP;uniform float uTime,uWind,uSpin;
+uniform mat4 uVP;uniform float uTime,uWind,uSpin,uLeafFlutter;
 out vec3 vN,vP;out vec2 vUV;out float vTint,vType;
 void main(){
     float ang=aMeta.x+uSpin,ca=cos(ang),sa=sin(ang);
@@ -309,6 +311,13 @@ void main(){
         float force=(primary+gust+local)*uWind*max(aPos.y,0.0)*.032;
         p.x+=force;
         p.z+=force*.52;
+    }
+    // Small, per-card flutter is distinct from the entire branch wind sway.
+    if(uLeafFlutter>0.0){
+        float phase=aPos.x*9.17+aPos.z*7.23+aInst.x*.31+uTime*3.4;
+        float flutter=sin(phase)*sin(uTime*.67+aInst.z*.15);
+        p.x+=flutter*uLeafFlutter*aInst.w;
+        p.z+=cos(phase*.84)*uLeafFlutter*.65*aInst.w;
     }
     vec3 r=vec3(p.x*ca-p.z*sa,p.y,p.x*sa+p.z*ca);
     vP=r+aInst.xyz;
@@ -486,8 +495,9 @@ struct Relic {float x,z;bool picked=false;};
 struct State {
     int width=1280,height=720;
     GLuint terrainProg=0,instProg=0,shadowProg=0,skyProg=0,skyVao=0;
-    GLuint tex[13]{};
-    Mesh trunk,pineTrunk,leaves,leafDetail,pineLeaves,grass,shrub,rock,shadow,crystal;
+    GLuint tex[15]{};
+    Mesh woodHi[5],woodMid[5],leavesHi[5],leavesMid[5],leavesFar[5];
+    Mesh grass,shrub,rock,shadow,crystal;
     std::unordered_map<int64_t,ChunkData> chunks;
     Batches batches;
     bool batchesDirty=true;
@@ -604,15 +614,16 @@ static void instDraw(const Mesh& mesh,const std::vector<Instance>& instances){
 static void material(int index,float cutout,float wind,float emissive=0.f,float spin=0.f){
     glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_2D,game.tex[index]);
     glUniform1i(glGetUniformLocation(game.instProg,"uTex"),0);
-    glActiveTexture(GL_TEXTURE1);glBindTexture(GL_TEXTURE_2D,game.tex[index==11?12:10]);
+    glActiveTexture(GL_TEXTURE1);glBindTexture(GL_TEXTURE_2D,game.tex[index==13?14:(index==11?12:10)]);
     glUniform1i(glGetUniformLocation(game.instProg,"uMaterialNormal"),1);
     set1(game.instProg,"uCutout",cutout);
     set1(game.instProg,"uWind",wind);
     set1(game.instProg,"uEmissive",emissive);
     set1(game.instProg,"uSpin",spin);
     set1(game.instProg,"uRoughness",index==3?.83f:.94f);
-    set1(game.instProg,"uBump",index==3?.63f:(index==11?.58f:0.f));
-    set1(game.instProg,"uFoliage",(index==4||index==5||index==6||index==11)?1.f:0.f);
+    set1(game.instProg,"uBump",index==3?.63f:((index==11||index==13)?.64f:0.f));
+    set1(game.instProg,"uFoliage",(index==4||index==5||index==6||index==11||index==13)?1.f:0.f);
+    set1(game.instProg,"uLeafFlutter",(index==11||index==13)?0.04f:0.f);
 }
 static void update(float dt){
     dt=clampf(dt,0.f,.05f);game.t+=dt;
@@ -695,18 +706,40 @@ static void draw(float dt){
     glDisable(GL_BLEND);
     common(game.instProg,vp,eye,fog,light);
     set1(game.instProg,"uTime",game.t);
-    material(3,0,0);instDraw(game.trunk,game.batches.broad);
-    material(3,0,0);instDraw(game.pineTrunk,game.batches.pine);
-    material(4,0,.7f);instDraw(game.leaves,game.batches.broad);
-    material(4,0,.55f);instDraw(game.pineLeaves,game.batches.pine);
-    // High-detail leaf cards only for near deciduous trees: avoid distant alpha overdraw.
-    std::vector<Instance> closeBroad;
-    closeBroad.reserve(game.batches.broad.size());
-    for(const auto& t:game.batches.broad){
-        float dx=t.x-game.x,dz=t.z-game.z;
-        if(dx*dx+dz*dz<85.f*85.f)closeBroad.push_back(t);
+    // Tree instancing with separate species meshes and three geometry LODs.
+    // Near: complete branched wood and modelled leaf sprigs.
+    // Mid: reduced branches/cards. Far: coarse silhouette (no alpha-test forest).
+    std::array<std::vector<Instance>,5> nearTrees,midTrees,farTrees;
+    const float forwardX=std::sin(game.yaw),forwardZ=std::cos(game.yaw);
+    auto assignTree=[&](const Instance& t,bool pine){
+        const float dx=t.x-game.x,dz=t.z-game.z,d2=dx*dx+dz*dz;
+        if(d2>242.f*242.f)return;
+        const float distance=std::sqrt(d2);
+        if(dx*forwardX+dz*forwardZ < -distance*.52f-12.f)return;
+        const int species=pine?
+            3+std::min(1,int(t.tint*2.f)):
+            std::min(2,int(t.tint*3.f));
+        if(d2<52.f*52.f)nearTrees[species].push_back(t);
+        else if(d2<118.f*118.f)midTrees[species].push_back(t);
+        else farTrees[species].push_back(t);
+    };
+    for(const auto& t:game.batches.broad)assignTree(t,false);
+    for(const auto& t:game.batches.pine)assignTree(t,true);
+
+    material(3,0.f,0.f);
+    for(int s=0;s<5;s++){
+        instDraw(game.woodHi[s],nearTrees[s]);
+        instDraw(game.woodMid[s],midTrees[s]);
+        instDraw(game.woodMid[s],farTrees[s]);
     }
-    material(11,.42f,.85f);instDraw(game.leafDetail,closeBroad);
+    for(int s=0;s<5;s++){
+        material(s>=3?13:11,.44f,.75f);
+        instDraw(game.leavesHi[s],nearTrees[s]);
+        material(s>=3?13:11,.44f,.48f);
+        instDraw(game.leavesMid[s],midTrees[s]);
+    }
+    material(4,0.f,.15f);
+    for(int s=0;s<5;s++)instDraw(game.leavesFar[s],farTrees[s]);
     // Distance cull ground cards; their alpha edges dominate fragment cost on Mali.
     std::vector<Instance> closeGrass;closeGrass.reserve(game.batches.grass.size());
     for(const auto& t:game.batches.grass){
@@ -737,9 +770,16 @@ static void initialize(){
     if(game.skyProg)glGenVertexArrays(1,&game.skyVao);
     if(!game.terrainProg||!game.instProg||!game.shadowProg){LOGE("GLES shader initialization failed");return;}
     glGenBuffers(1,&instanceBuffer);
-    game.trunk=makeMesh(makeTrunk(false));game.pineTrunk=makeMesh(makeTrunk(true));
-    game.leaves=makeMesh(makeBroadLeaves());game.leafDetail=makeMesh(makeLeafDetail());
-    game.pineLeaves=makeMesh(makePineLeaves());
+    for(int species=0;species<5;species++){
+        ForestTreeMesh model=forestBuildTree(species);
+        game.woodHi[species]=makeMesh(model.woodHigh);
+        game.woodMid[species]=makeMesh(model.woodMid);
+        game.leavesHi[species]=makeMesh(model.foliageHigh);
+        game.leavesMid[species]=makeMesh(model.foliageMid);
+        game.leavesFar[species]=makeMesh(model.foliageFar);
+        LOGE("species %d high: wood %u triangles, leaf %u triangles",
+             species,unsigned(model.woodHigh.i.size()/3),unsigned(model.foliageHigh.i.size()/3));
+    }
     game.grass=makeMesh(makeCards(.8f,1.3f,2));
     game.shrub=makeMesh(makeCards(1.6f,1.5f,3));
     ModelData stone;ellipsoid(stone,{0,0,0},{.8f,.42f,.65f},6,8);game.rock=makeMesh(stone);
@@ -747,7 +787,7 @@ static void initialize(){
     for(auto &t:game.tex)t=createTexture();
     game.ready=true;
     glDisable(GL_CULL_FACE);
-    LOGE("Engine ready: GLES3 / 2K world / normal-mapped materials");
+    LOGE("Engine ready: forest 5 species x 3 LOD, branches + leaves + PBR-inspired light");
 }
 extern "C" JNIEXPORT void JNICALL
 Java_com_florestaviva_game_MainActivity_nativeCreate(JNIEnv*,jclass){initialize();}
@@ -787,7 +827,7 @@ Java_com_florestaviva_game_MainActivity_nativeResize(JNIEnv*,jclass,jint w,jint 
 }
 extern "C" JNIEXPORT void JNICALL
 Java_com_florestaviva_game_MainActivity_nativeUploadTexture(JNIEnv*env,jclass,jint index,jobject bitmap){
-    if(index<0||index>=13||!bitmap||!game.ready)return;
+    if(index<0||index>=15||!bitmap||!game.ready)return;
     AndroidBitmapInfo info{};
     if(AndroidBitmap_getInfo(env,bitmap,&info)!=ANDROID_BITMAP_RESULT_SUCCESS || info.format!=ANDROID_BITMAP_FORMAT_RGBA_8888)return;
     void* pixels=nullptr;
