@@ -47,16 +47,37 @@ def request(url):
 def metadata(asset):
     raw=request("https://api.polyhaven.com/files/"+asset)
     data=json.loads(raw)
-    if not isinstance(data,dict) or "diff" not in data:
+    if not isinstance(data,dict) or not data:
         raise ValueError("Asset missing texture mappings: "+asset)
     return data
 
 def source(files,kind,resolution):
-    try:
-        variants=files[kind][resolution]
-        return variants["jpg"] if "jpg" in variants else variants["png"]
-    except (KeyError,TypeError) as error:
-        raise RuntimeError(f"No {kind} {resolution} PBR image in API") from error
+    # Poly Haven currently has multiple nested variants and IDs; discover
+    # by the provider filename, not assumptions about the top-level map keys.
+    def walk(node):
+        if isinstance(node,dict):
+            if isinstance(node.get("url"),str):
+                yield node
+            for key,value in node.items():
+                if key!="url":
+                    yield from walk(value)
+        elif isinstance(node,list):
+            for item in node:
+                yield from walk(item)
+    candidates=[]
+    for entry in walk(files):
+        filename=urlparse(entry["url"]).path.rsplit("/",1)[-1].lower()
+        if f"_{kind}_" not in filename:
+            continue
+        if f"_{resolution}." not in filename:
+            continue
+        if not filename.endswith((".jpg",".jpeg",".png")):
+            continue
+        score=1 if filename.endswith(".jpg") else 0
+        candidates.append((score,entry))
+    if not candidates:
+        raise RuntimeError(f"No {kind} {resolution} provider map; top-level keys: {list(files)[:16]}")
+    return max(candidates,key=lambda x:x[0])[1]
 
 def decode_and_verify(entry,asset,kind):
     info=source(entry,kind,asset["resolution"])
@@ -102,7 +123,6 @@ def bake(manifest_path:Path,root:Path):
         role=asset["role"]
         normal=parts["nor_gl"].copy()
         # Normal XY are preserved from photos; reconstruct positive Z in GLES.
-        normal.putpixel((0,0),normal.getpixel((0,0)))
         nx,ny,_=normal.split()
         normalRG=Image.merge("RGB",(nx,ny,Image.new("L",normal.size,255)))
         orm=Image.merge("RGB",(
