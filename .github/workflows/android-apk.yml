@@ -214,6 +214,25 @@ jobs:
         if: github.ref == 'refs/heads/feat/step1-audit-assets'
         run: |
           python tools/audit_repository.py --include-untracked             --output build/audit/baked_assets.json
+      - name: Gerar e auditar KTX2 ASTC 6x6 comprimido de fonte fotográfica
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tools/build_ktx2.py --limit 6
+          python - <<'PY'
+          import json,struct
+          from pathlib import Path
+          root=Path("app/src/main/assets")
+          doc=json.loads((root/"ktx2_codec_manifest.json").read_text())
+          assert len(doc["files"])==6
+          for img in doc["files"]:
+              raw=(root/"ktx2"/img["name"]).read_bytes()
+              assert raw[:12]==bytes.fromhex("ab4b5458203230bb0d0a1a0a")
+              vk_format=struct.unpack_from("<I",raw,12)[0]
+              mip_count=struct.unpack_from("<I",raw,40)[0]
+              assert vk_format==165 and mip_count>=9,(img["name"],vk_format,mip_count)
+          print("KTX2_ASTC_NATIVE validated",len(doc["files"]))
+          PY
       - name: Preparar prévia dos materiais fotografados
         run: |
           python tools/material_preview.py
