@@ -2,7 +2,7 @@ name: Gerar APK Android
 on:
   workflow_dispatch:
   push:
-    branches: [main, master, graphics3-atlas-vulkan-sky, graphics4-procedural-aaa-vegetation, graphics5-dense-vegetation-vulkan-compute, graphics6-shadows-material-rework, graphics7-scanned-foliage-postfx]
+    branches: [main, master, graphics3-atlas-vulkan-sky, graphics4-procedural-aaa-vegetation, graphics5-dense-vegetation-vulkan-compute, graphics6-shadows-material-rework, graphics8-scanned-foliage-postfx, graphics8-rivers-wildlife-quests-arm64]
   pull_request:
     branches: [main]
 permissions:
@@ -75,6 +75,19 @@ jobs:
           set -euo pipefail
           python tools/photogrammetry_materials.py --strict
           cat app/src/main/assets/photogrammetry_manifest.txt
+      - name: Gerar água, pedras, fauna e flores
+        run: |
+          set -euo pipefail
+          python tools/river_wildlife_materials.py
+          python - <<'PY'
+          from PIL import Image
+          from pathlib import Path
+          a=Path('app/src/main/assets')
+          for name in ('river_normal','riverbed','wildlife_fur','wildlife_fur_normal','wildflowers'):
+              im=Image.open(a/(name+'.png'))
+              assert im.width>=512 and im.height>=512,name
+          assert Image.open(a/'wildlife_fur.png').size == (1536,512)
+          PY
       - name: Preparar prévia dos materiais fotografados
         run: python tools/material_preview.py
       - name: Compilar shaders Vulkan de teste
@@ -112,10 +125,12 @@ jobs:
           java=Path('app/src/main/java/com/florestaviva/game/MainActivity.java').read_text()
           group=java.split('String[] files = {',1)[1].split('};',1)[0]
           entries=re.findall(r'"([^"]*)"',group)
-          assert len(entries)==25,entries
+          assert len(entries)==30,entries
           assert entries[19:21] == ['foliage_color.png','foliage_normal.png'],entries
-          assert entries[21:] == ['grass_rough.png','soil_rough.png',
+          assert entries[21:25] == ['grass_rough.png','soil_rough.png',
                                    'bark_rough.png','pine_bark_rough.png'],entries
+          assert entries[25:] == ['river_normal.png','riverbed.png',
+                                  'wildlife_fur.png','wildlife_fur_normal.png','wildflowers.png'],entries
           asset=Path('app/src/main/assets')
           for filename in entries:
               if filename: assert (asset/filename).exists(),filename
@@ -129,12 +144,32 @@ jobs:
           # The original source textures remain in Git to regenerate the atlas;
           # only the consolidated atlas and actively used PBR maps enter the APK.
           rm app/src/main/assets/{blades,bush,leaves_atlas,leaves_normal,pine_atlas,pine_normal}.png
+      - name: Testar hidrologia e biomas
+        shell: bash
+        run: |
+          set -euo pipefail
+          g++ -std=c++17 -O2 -Wall -Wextra tests/river_biome_test.cpp -o /tmp/river_biome_test
+          /tmp/river_biome_test
       - name: Compilar APK Debug
         run: gradle :app:assembleDebug --stacktrace --no-daemon
+      - name: Confirmar APK Android 64 bits
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import zipfile
+          apk='app/build/outputs/apk/debug/app-debug.apk'
+          with zipfile.ZipFile(apk) as z:
+              native=[n for n in z.namelist() if n.endswith('libflorestaviva.so')]
+              assert native == ['lib/arm64-v8a/libflorestaviva.so'],native
+              raw=z.read(native[0])
+              assert raw[:5] == b'\x7fELF\x02'
+              print('Verified Android ELF64 ARM64: ',len(raw),'bytes')
+          PY
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: FlorestaViva-Graphics7-APK
+          name: FlorestaViva-Graphics8-APK
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
       - name: Publicar APK direto em GitHub Releases
@@ -144,11 +179,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cp app/build/outputs/apk/debug/app-debug.apk FlorestaViva-Graphics7.apk
-          if ! gh release view graphics7 >/dev/null 2>&1; then
-            gh release create graphics7 --title 'Floresta Viva Graphics 7' --notes 'APK completo: materiais CC0 fotografados, sombras direcionais e vegetação procedural. Android arm64 e armeabi-v7a. Build de testes assinado com debug key.'
+          cp app/build/outputs/apk/debug/app-debug.apk FlorestaViva-Graphics8.apk
+          if ! gh release view graphics8 >/dev/null 2>&1; then
+            gh release create graphics8 --title 'Floresta Viva Graphics 8' --notes 'APK completo: materiais CC0 fotografados, sombras direcionais e vegetação procedural. Android exclusivamente arm64-v8a. Build de testes assinado com debug key.'
           fi
-          gh release upload graphics7 FlorestaViva-Graphics7.apk --clobber
+          gh release upload graphics8 FlorestaViva-Graphics8.apk --clobber
       - name: Publicar comparação dos materiais
         uses: actions/upload-artifact@v4
         with:
