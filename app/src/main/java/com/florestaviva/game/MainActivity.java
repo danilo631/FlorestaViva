@@ -65,6 +65,12 @@ public class MainActivity extends Activity {
         fullscreen();
         android.util.Log.i("FlorestaViva",nativeVulkanInfo());
         graphicsQuality=getSharedPreferences("floresta_settings",MODE_PRIVATE).getInt("graphicsQuality",1);
+        if((getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE)!=0 &&
+           getIntent().hasExtra("captureScene")) {
+            // Fast, reproducible software-rendered baseline; keep the same
+            // profile when comparing before/after screenshots.
+            graphicsQuality=0;
+        }
 
         surface = new GLSurfaceView(this);
         surface.setEGLContextClientVersion(3);

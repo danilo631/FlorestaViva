@@ -443,6 +443,7 @@ jobs:
           print('PASS debug x86_64 emulator APK, production remains ARM64')
           PY
       - name: Render screenshots with Android SwiftShader software GPU
+        timeout-minutes: 17
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -451,7 +452,7 @@ jobs:
           profile: pixel_6
           disable-animations: true
           emulator-options: -no-window -no-audio -no-snapshot -gpu swiftshader_indirect -no-boot-anim
-          script: bash tools/ci_capture_android.sh
+          script: timeout 600 bash tools/ci_capture_android.sh
       - name: Upload 4 fixed-camera frames and short screenrecord
         if: always()
         uses: actions/upload-artifact@v4
