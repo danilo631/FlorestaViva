@@ -485,19 +485,19 @@ static Mesh makeMesh(const ModelData& data){
 }
 struct ChunkData {
     Mesh terrain;
-    std::vector<Instance> broad,pine,grass,shrub,stones,shadow;
+    std::vector<Instance> broad,pine,grass,shrub,stones,logs,shadow;
 };
 struct Batches {
-    std::vector<Instance> broad,pine,grass,shrub,stones,shadow;
-    void clear(){broad.clear();pine.clear();grass.clear();shrub.clear();stones.clear();shadow.clear();}
+    std::vector<Instance> broad,pine,grass,shrub,stones,logs,shadow;
+    void clear(){broad.clear();pine.clear();grass.clear();shrub.clear();stones.clear();logs.clear();shadow.clear();}
 };
 struct Relic {float x,z;bool picked=false;};
 struct State {
     int width=1280,height=720;
     GLuint terrainProg=0,instProg=0,shadowProg=0,skyProg=0,skyVao=0;
-    GLuint tex[15]{};
+    GLuint tex[19]{};
     Mesh woodHi[5],woodMid[5],leavesHi[5],leavesMid[5],leavesFar[5];
-    Mesh grass,shrub,rock,shadow,crystal;
+    Mesh grass,shrub,rock,fallenLog,shadow,crystal;
     std::unordered_map<int64_t,ChunkData> chunks;
     Batches batches;
     bool batchesDirty=true;
@@ -556,6 +556,13 @@ static ChunkData makeChunk(int cx,int cz){
         if(i%19==0)out.shrub.push_back({p.x,p.y,p.z,scale*2.f,ins.rotation,ins.tint,0,0});
         else out.grass.push_back(ins);
     }
+    for(int i=0;i<3;i++){
+        Vec3 p=samplePos();
+        if(std::hypot(p.x,p.z)>12.f){
+            out.logs.push_back({p.x,p.y+.08f,p.z,
+                .70f+unit(rng)*.62f,unit(rng)*6.283f,unit(rng),0.f,0.f});
+        }
+    }
     for(int i=0;i<8;i++){
         Vec3 p=samplePos();out.stones.push_back({p.x,p.y-.2f,p.z,.35f+unit(rng)*.7f,unit(rng)*6.283f,unit(rng),0,0});
     }
@@ -566,7 +573,7 @@ static void rebuildBatches(){
     Batches& b=game.batches;b.clear();
     for(auto& pair:game.chunks){const ChunkData& c=pair.second;
         append(b.broad,c.broad);append(b.pine,c.pine);append(b.grass,c.grass);
-        append(b.shrub,c.shrub);append(b.stones,c.stones);append(b.shadow,c.shadow);
+        append(b.shrub,c.shrub);append(b.stones,c.stones);append(b.logs,c.logs);append(b.shadow,c.shadow);
     }
     game.batchesDirty=false;
 }
@@ -614,14 +621,14 @@ static void instDraw(const Mesh& mesh,const std::vector<Instance>& instances){
 static void material(int index,float cutout,float wind,float emissive=0.f,float spin=0.f){
     glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_2D,game.tex[index]);
     glUniform1i(glGetUniformLocation(game.instProg,"uTex"),0);
-    glActiveTexture(GL_TEXTURE1);glBindTexture(GL_TEXTURE_2D,game.tex[index==13?14:(index==11?12:10)]);
+    glActiveTexture(GL_TEXTURE1);glBindTexture(GL_TEXTURE_2D,game.tex[index==13?14:(index==11?12:(index==15?16:(index==17?18:10)))]);
     glUniform1i(glGetUniformLocation(game.instProg,"uMaterialNormal"),1);
     set1(game.instProg,"uCutout",cutout);
     set1(game.instProg,"uWind",wind);
     set1(game.instProg,"uEmissive",emissive);
     set1(game.instProg,"uSpin",spin);
-    set1(game.instProg,"uRoughness",index==3?.83f:.94f);
-    set1(game.instProg,"uBump",index==3?.63f:((index==11||index==13)?.64f:0.f));
+    set1(game.instProg,"uRoughness",(index==3||index==15)?.83f:(index==17?.90f:.94f));
+    set1(game.instProg,"uBump",(index==3||index==15)?.63f:(index==17?.42f:((index==11||index==13)?.64f:0.f)));
     set1(game.instProg,"uFoliage",(index==4||index==5||index==6||index==11||index==13)?1.f:0.f);
     set1(game.instProg,"uLeafFlutter",(index==11||index==13)?0.04f:0.f);
 }
@@ -726,8 +733,8 @@ static void draw(float dt){
     for(const auto& t:game.batches.broad)assignTree(t,false);
     for(const auto& t:game.batches.pine)assignTree(t,true);
 
-    material(3,0.f,0.f);
     for(int s=0;s<5;s++){
+        material(s>=3?15:3,0.f,0.f);
         instDraw(game.woodHi[s],nearTrees[s]);
         instDraw(game.woodMid[s],midTrees[s]);
         instDraw(game.woodMid[s],farTrees[s]);
@@ -748,7 +755,8 @@ static void draw(float dt){
     }
     material(5,.42f,.8f);instDraw(game.grass,closeGrass);
     material(6,.36f,.5f);instDraw(game.shrub,game.batches.shrub);
-    material(1,0,0);instDraw(game.rock,game.batches.stones);
+    material(17,0.f,0.f);instDraw(game.rock,game.batches.stones);
+    material(3,0.f,0.f);instDraw(game.fallenLog,game.batches.logs);
     if(game.collected<RELIC_COUNT){
         std::vector<Instance> floating;
         for(const Relic&r:game.relics)if(!r.picked){
@@ -782,12 +790,12 @@ static void initialize(){
     }
     game.grass=makeMesh(makeCards(.8f,1.3f,2));
     game.shrub=makeMesh(makeCards(1.6f,1.5f,3));
-    ModelData stone;ellipsoid(stone,{0,0,0},{.8f,.42f,.65f},6,8);game.rock=makeMesh(stone);
+    game.rock=makeMesh(forestRockMesh());game.fallenLog=makeMesh(forestFallenLog());
     game.shadow=makeMesh(makeShadow());game.crystal=makeMesh(makeCrystal());
     for(auto &t:game.tex)t=createTexture();
     game.ready=true;
     glDisable(GL_CULL_FACE);
-    LOGE("Engine ready: forest 5 species x 3 LOD, branches + leaves + PBR-inspired light");
+    LOGE("Engine ready: forest 5 species x 3 LOD, branched meshes, 19 PBR-inspired material slots");
 }
 extern "C" JNIEXPORT void JNICALL
 Java_com_florestaviva_game_MainActivity_nativeCreate(JNIEnv*,jclass){initialize();}
@@ -827,7 +835,7 @@ Java_com_florestaviva_game_MainActivity_nativeResize(JNIEnv*,jclass,jint w,jint 
 }
 extern "C" JNIEXPORT void JNICALL
 Java_com_florestaviva_game_MainActivity_nativeUploadTexture(JNIEnv*env,jclass,jint index,jobject bitmap){
-    if(index<0||index>=15||!bitmap||!game.ready)return;
+    if(index<0||index>=19||!bitmap||!game.ready)return;
     AndroidBitmapInfo info{};
     if(AndroidBitmap_getInfo(env,bitmap,&info)!=ANDROID_BITMAP_RESULT_SUCCESS || info.format!=ANDROID_BITMAP_FORMAT_RGBA_8888)return;
     void* pixels=nullptr;
