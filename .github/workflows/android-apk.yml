@@ -36,7 +36,7 @@ jobs:
         run: |
           python -m pip install --disable-pip-version-check pillow
           python tools/audit_repository.py --output build/audit/source_assets.json
-          grep -nE 'texture\\(u(GrassNormal|DirtNormal|MossNormal|MaterialNormal|GrassRough|DirtRough|MossRough|MaterialRough)' app/src/main/cpp/game.cpp > build/audit/shader_sample_reads.txt
+          grep -nF -e 'texture(uGrassNormal' -e 'texture(uDirtNormal' -e 'texture(uMossNormal' -e 'texture(uMaterialNormal' -e 'texture(uGrassRough' -e 'texture(uDirtRough' -e 'texture(uMossRough' -e 'texture(uMaterialRough' app/src/main/cpp/game.cpp > build/audit/shader_sample_reads.txt
           cat build/audit/shader_sample_reads.txt
           python -m json.tool assets_manifest.json > build/audit/asset_manifest.json
           cp CREDITS.md build/audit/CREDITS.md
