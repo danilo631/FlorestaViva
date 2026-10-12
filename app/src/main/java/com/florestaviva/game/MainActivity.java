@@ -34,6 +34,7 @@ public class MainActivity extends Activity {
     public static native void nativeInput(float sideways, float forward, float lookX, float lookY,
                                           boolean running, boolean collect);
     public static native void nativeRender(float frameTime);
+    public static native void nativeJump();
     public static native String nativeStatus();
     public static native float[] nativeMapData();
     public static native String nativeSave();
@@ -125,7 +126,7 @@ public class MainActivity extends Activity {
 
     private static final class Snapshot {
         float mx, mz, lx, ly;
-        boolean sprint, collect;
+        boolean sprint, collect, jump;
     }
 
     private class GameRenderer implements GLSurfaceView.Renderer {
@@ -143,7 +144,9 @@ public class MainActivity extends Activity {
                     "pine_bark.png","pine_bark_normal.png",
                     "rock.png","rock_normal.png",
                     "foliage_color.png","foliage_normal.png",
-                    "grass_rough.png","soil_rough.png","bark_rough.png","pine_bark_rough.png"};
+                    "grass_rough.png","soil_rough.png","bark_rough.png","pine_bark_rough.png",
+                    "river_normal.png","riverbed.png","wildlife_fur.png",
+                    "wildlife_fur_normal.png","wildflowers.png"};
             BitmapFactory.Options opts = new BitmapFactory.Options();
             opts.inScaled = false;
             opts.inPreferredConfig = Bitmap.Config.ARGB_8888;
@@ -164,6 +167,7 @@ public class MainActivity extends Activity {
             lastFrame=now;
             Snapshot input=overlay.snapshot();
             nativeInput(input.mx,input.mz,input.lx,input.ly,input.sprint,input.collect);
+            if(input.jump)nativeJump();
             nativeRender(dt);
             if((frames++%180)==0){
                 getSharedPreferences("floresta_save",MODE_PRIVATE).edit()
@@ -184,7 +188,7 @@ public class MainActivity extends Activity {
         private float anchorX=100*density,anchorY=300*density;
         private float stickX=0,stickY=0,lastLookX=0,lastLookY=0;
         private float pendingLookX=0,pendingLookY=0;
-        private boolean picked=false;
+        private boolean picked=false, pendingJump=false;
         private float[] mapData=null;
         synchronized void setMap(float[] points){mapData=points;postInvalidateOnAnimation();}
         private final float radius=60*density;
@@ -195,6 +199,8 @@ public class MainActivity extends Activity {
         private float sprintY(){return getHeight()-92*density;}
         private float pickupX(){return getWidth()-85*density;}
         private float pickupY(){return getHeight()-215*density;}
+        private float jumpX(){return getWidth()-202*density;}
+        private float jumpY(){return getHeight()-104*density;}
         private boolean near(float x,float y,float cx,float cy,float dist){
             return (x-cx)*(x-cx)+(y-cy)*(y-cy)<dist*dist;
         }
@@ -202,8 +208,8 @@ public class MainActivity extends Activity {
             Snapshot s=new Snapshot();
             s.mx=stickX/radius;s.mz=-stickY/radius;
             s.lx=pendingLookX;s.ly=pendingLookY;
-            s.sprint=sprintId!=-1;s.collect=picked;
-            pendingLookX=0;pendingLookY=0;picked=false;
+            s.sprint=sprintId!=-1;s.collect=picked;s.jump=pendingJump;
+            pendingLookX=0;pendingLookY=0;picked=false;pendingJump=false;
             return s;
         }
         @Override public synchronized boolean onTouchEvent(MotionEvent event) {
@@ -212,7 +218,8 @@ public class MainActivity extends Activity {
             if(action==MotionEvent.ACTION_DOWN||action==MotionEvent.ACTION_POINTER_DOWN){
                 int id=event.getPointerId(ai);
                 float x=event.getX(ai),y=event.getY(ai);
-                if(near(x,y,pickupX(),pickupY(),buttonRadius*1.28f))picked=true;
+                if(near(x,y,jumpX(),jumpY(),buttonRadius*1.25f))pendingJump=true;
+                else if(near(x,y,pickupX(),pickupY(),buttonRadius*1.28f))picked=true;
                 else if(near(x,y,sprintX(),sprintY(),buttonRadius*1.30f))sprintId=id;
                 else if(x<getWidth()*.45f && y>getHeight()*.32f && stickId==-1){
                     stickId=id;anchorX=x;anchorY=y;stickX=stickY=0;
@@ -263,6 +270,8 @@ public class MainActivity extends Activity {
             label(c,"CORRER",sprintX(),sprintY()+5*density,12);
             circle(c,pickupX(),pickupY(),buttonRadius,0x99678961);
             label(c,"PEGAR",pickupX(),pickupY()+5*density,13);
+            circle(c,jumpX(),jumpY(),buttonRadius,0x996289A3);
+            label(c,"PULAR",jumpX(),jumpY()+5*density,12);
             paint.setTextAlign(Paint.Align.LEFT);
             paint.setColor(0xCCFFFFFF);
             paint.setTextSize(11*density);
@@ -280,7 +289,21 @@ public class MainActivity extends Activity {
             c.drawLine(centerX-r,centerY,centerX+r,centerY,paint);
             c.drawLine(centerX,centerY-r,centerX,centerY+r,paint);
             paint.setStyle(Paint.Style.FILL);
-            for(int i=3;i+1<mapData.length;i+=2){
+            // 21 streamed points trace the river channel around the player.
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(5*density);
+            paint.setColor(0xCC65CDE9);
+            for(int i=15;i+3<mapData.length;i+=2){
+                float ax=(mapData[i]-mapData[0])*.35f*density;
+                float ay=-(mapData[i+1]-mapData[1])*.35f*density;
+                float bx=(mapData[i+2]-mapData[0])*.35f*density;
+                float by=-(mapData[i+3]-mapData[1])*.35f*density;
+                if(Math.hypot(ax,ay)<r-6*density && Math.hypot(bx,by)<r-6*density){
+                    c.drawLine(centerX+ax,centerY+ay,centerX+bx,centerY+by,paint);
+                }
+            }
+            paint.setStyle(Paint.Style.FILL);
+            for(int i=3;i+1<15 && i+1<mapData.length;i+=2){
                 if(mapData[i]>90000)continue;
                 float dx=(mapData[i]-mapData[0])*.35f*density;
                 float dy=-(mapData[i+1]-mapData[1])*.35f*density;
