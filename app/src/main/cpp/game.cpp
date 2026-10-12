@@ -903,7 +903,8 @@ Java_com_florestaviva_game_MainActivity_nativeStatus(JNIEnv*env,jclass){
     for(const Relic&r:game.relics)if(!r.picked)minDist=std::min(minDist,std::hypot(game.x-r.x,game.z-r.z));
     char buff[240];
     if(game.collected==RELIC_COUNT)std::snprintf(buff,sizeof(buff),"FLORESTA VIVA   |   %d/%d fragmentos   |   MISSAO CONCLUIDA!",game.collected,RELIC_COUNT);
-    else std::snprintf(buff,sizeof(buff),"FLORESTA VIVA   |   Fragmentos: %d/%d   |   Proximo: %.0f m",game.collected,RELIC_COUNT,minDist);
+    else std::snprintf(buff,sizeof(buff),"FLORESTA VIVA | %d/%d fragmentos | %.0f m | Vento: %s",
+        game.collected,RELIC_COUNT,minDist,game.windVulkan?"Vulkan":"CPU");
     return env->NewStringUTF(buff);
 }
 

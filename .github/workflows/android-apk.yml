@@ -84,6 +84,32 @@ jobs:
           g++ -std=c++17 -O2 -Wall -Wextra tests/forest_geometry_test.cpp -o /tmp/forest_geometry_test
           FOREST_EXPORT_DIR="$PWD/build/forest-models" /tmp/forest_geometry_test
           cp app/src/main/assets/{bark,bark_normal,pine_bark,pine_bark_normal,pine_atlas,pine_normal,leaves_atlas,leaves_normal,canopy}.png build/forest-models/
+      - name: Validar slots de materiais e reduzir tamanho do APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import re
+          from pathlib import Path
+          from PIL import Image
+          java=Path('app/src/main/java/com/florestaviva/game/MainActivity.java').read_text()
+          group=java.split('String[] files = {',1)[1].split('};',1)[0]
+          entries=re.findall(r'"([^"]*)"',group)
+          assert len(entries)==21,entries
+          assert entries[19:] == ['foliage_color.png','foliage_normal.png'],entries
+          asset=Path('app/src/main/assets')
+          for filename in entries:
+              if filename: assert (asset/filename).exists(),filename
+          albedo=Image.open(asset/'foliage_color.png')
+          for y in (0,768):
+              for x in (0,768):
+                  cropped=albedo.crop((x,y,x+768,y+768))
+                  assert cropped.getchannel('A').getbbox() is not None
+          print('Valid material slots, unified atlas quadrants and generated textures')
+          PY
+          # The original source textures remain in Git to regenerate the atlas;
+          # only the consolidated atlas and actively used PBR maps enter the APK.
+          rm app/src/main/assets/{blades,bush,leaves_atlas,leaves_normal,pine_atlas,pine_normal}.png
       - name: Compilar APK Debug
         run: gradle :app:assembleDebug --stacktrace --no-daemon
       - name: Publicar APK
