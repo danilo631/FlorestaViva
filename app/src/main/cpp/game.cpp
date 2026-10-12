@@ -170,6 +170,7 @@ precision highp float;
 precision highp sampler2DShadow;
 in vec3 vP;in vec3 vN;in vec2 vUV;
 uniform sampler2D uGrass,uDirt,uMoss,uGrassNormal,uDirtNormal,uMossNormal;
+uniform sampler2D uGrassRough,uDirtRough;
 uniform vec3 uEye,uFog,uSun;
 uniform float uLight;
 uniform sampler2DShadow uSunShadow;
@@ -216,7 +217,9 @@ void main(){
     vec3 n=normalize(N+vec3(mapXY.x*.72,0.0,mapXY.y*.72));
     float diffuse=max(dot(n,L),0.0);
     float wet=clamp(moss*.4+dirt*.22,0.0,.34);
-    float roughness=mix(.94,.69,wet);
+    float measuredRough=mix(texture(uGrassRough,guv).r,
+        texture(uDirtRough,duv).r,dirt);
+    float roughness=clamp(mix(measuredRough,.70,moss*.42)-wet*.11,.34,.97);
     float highlight=ggxSpec(n,V,L,roughness)*diffuse*.30;
     float sunVisibility=visibleSun(vP,n);
     float ambient=.22+.11*max(n.y,0.0);
@@ -273,10 +276,10 @@ static const char* INST_FS=R"GLSL(#version 300 es
 precision highp float;
 precision highp sampler2DShadow;
 in vec3 vN,vP;in vec2 vUV;in float vTint,vType;
-uniform sampler2D uTex,uMaterialNormal;
+uniform sampler2D uTex,uMaterialNormal,uMaterialRough;
 uniform vec4 uAtlasRect;
 uniform vec3 uEye,uFog,uSun;
-uniform float uLight,uCutout,uEmissive,uRoughness,uBump,uFoliage;
+uniform float uLight,uCutout,uEmissive,uRoughness,uBump,uFoliage,uUseRoughnessMap;
 uniform sampler2DShadow uSunShadow;
 uniform mat4 uSunShadowVP;
 uniform float uShadowsEnabled;
@@ -327,7 +330,9 @@ void main(){
         float transmission=pow(max(-nl,0.0),1.7)*.23*uLight;
         rgb+=s.rgb*vec3(.38,.60,.18)*transmission;
     }else{
-        rgb+=vec3(specGGX(n,V,L,uRoughness)*max(nl,0.0)*uLight*.46);
+        float rough=(uUseRoughnessMap>.5)?
+            clamp(texture(uMaterialRough,uv).r,.28,.98):uRoughness;
+        rgb+=vec3(specGGX(n,V,L,rough)*max(nl,0.0)*uLight*.46);
     }
     if(vType>.5)rgb*=vec3(.84,1.04,.86);
     rgb+=uEmissive*vec3(.10,.44,.65);
@@ -488,7 +493,7 @@ struct State {
     int depthMapSize=0;
     bool treeDepthReady=false;
     Mat4 sunShadowMatrix{};
-    GLuint tex[21]{};
+    GLuint tex[25]{};
     GLuint windTex=0;
     bool windVulkan=false;
     Mesh woodHi[5],woodMid[5],leavesHi[5],leavesMid[5],leavesFar[5];
@@ -650,6 +655,11 @@ static void material(int index,float cutout,float wind,float emissive=0.f,float 
     }else{
         glUniform4f(glGetUniformLocation(game.instProg,"uAtlasRect"),0.f,0.f,1.f,1.f);
     }
+    const int roughSlot=index==3?23:(index==15?24:-1);
+    glActiveTexture(GL_TEXTURE5);
+    glBindTexture(GL_TEXTURE_2D,game.tex[roughSlot>=0?roughSlot:23]);
+    glUniform1i(glGetUniformLocation(game.instProg,"uMaterialRough"),5);
+    set1(game.instProg,"uUseRoughnessMap",roughSlot>=0?1.f:0.f);
     set1(game.instProg,"uCutout",cutout);
     set1(game.instProg,"uWind",wind);
     set1(game.instProg,"uEmissive",emissive);
@@ -833,6 +843,10 @@ static void draw(float dt){
     glUniform1i(glGetUniformLocation(game.terrainProg,"uGrassNormal"),3);
     glUniform1i(glGetUniformLocation(game.terrainProg,"uDirtNormal"),4);
     glUniform1i(glGetUniformLocation(game.terrainProg,"uMossNormal"),5);
+    glActiveTexture(GL_TEXTURE7);glBindTexture(GL_TEXTURE_2D,game.tex[21]);
+    glUniform1i(glGetUniformLocation(game.terrainProg,"uGrassRough"),7);
+    glActiveTexture(GL_TEXTURE8);glBindTexture(GL_TEXTURE_2D,game.tex[22]);
+    glUniform1i(glGetUniformLocation(game.terrainProg,"uDirtRough"),8);
     for(const auto& pair:game.chunks){const Mesh& m=pair.second.terrain;
         glBindVertexArray(m.vao);glDrawElements(GL_TRIANGLES,m.count,GL_UNSIGNED_INT,nullptr);
     }
@@ -1045,7 +1059,7 @@ Java_com_florestaviva_game_MainActivity_nativeResize(JNIEnv*,jclass,jint w,jint 
 }
 extern "C" JNIEXPORT void JNICALL
 Java_com_florestaviva_game_MainActivity_nativeUploadTexture(JNIEnv*env,jclass,jint index,jobject bitmap){
-    if(index<0||index>=21||!bitmap||!game.ready)return;
+    if(index<0||index>=25||!bitmap||!game.ready)return;
     AndroidBitmapInfo info{};
     if(AndroidBitmap_getInfo(env,bitmap,&info)!=ANDROID_BITMAP_RESULT_SUCCESS || info.format!=ANDROID_BITMAP_FORMAT_RGBA_8888)return;
     void* pixels=nullptr;

@@ -142,7 +142,8 @@ public class MainActivity extends Activity {
                     "","","","",
                     "pine_bark.png","pine_bark_normal.png",
                     "rock.png","rock_normal.png",
-                    "foliage_color.png","foliage_normal.png"};
+                    "foliage_color.png","foliage_normal.png",
+                    "grass_rough.png","soil_rough.png","bark_rough.png","pine_bark_rough.png"};
             BitmapFactory.Options opts = new BitmapFactory.Options();
             opts.inScaled = false;
             opts.inPreferredConfig = Bitmap.Config.ARGB_8888;

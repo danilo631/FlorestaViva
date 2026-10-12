@@ -110,8 +110,10 @@ jobs:
           java=Path('app/src/main/java/com/florestaviva/game/MainActivity.java').read_text()
           group=java.split('String[] files = {',1)[1].split('};',1)[0]
           entries=re.findall(r'"([^"]*)"',group)
-          assert len(entries)==21,entries
-          assert entries[19:] == ['foliage_color.png','foliage_normal.png'],entries
+          assert len(entries)==25,entries
+          assert entries[19:21] == ['foliage_color.png','foliage_normal.png'],entries
+          assert entries[21:] == ['grass_rough.png','soil_rough.png',
+                                   'bark_rough.png','pine_bark_rough.png'],entries
           asset=Path('app/src/main/assets')
           for filename in entries:
               if filename: assert (asset/filename).exists(),filename
