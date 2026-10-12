@@ -15,6 +15,7 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
+import android.widget.Button;
 import android.widget.TextView;
 
 import java.io.InputStream;
@@ -25,6 +26,7 @@ public class MainActivity extends Activity {
     static { System.loadLibrary("florestaviva"); }
 
     public static native void nativeCreate();
+    public static native void nativeSetGraphicsQuality(int level);
     public static native String nativeVulkanInfo();
     public static native void nativeResize(int width, int height);
     public static native void nativeUploadTexture(int index, Bitmap bitmap);
@@ -39,6 +41,8 @@ public class MainActivity extends Activity {
     private GLSurfaceView surface;
     private InputOverlay overlay;
     private TextView status;
+    private Button qualityButton;
+    private volatile int graphicsQuality=1;
 
     private void fullscreen() {
         getWindow().getDecorView().setSystemUiVisibility(
@@ -52,6 +56,7 @@ public class MainActivity extends Activity {
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         fullscreen();
         android.util.Log.i("FlorestaViva",nativeVulkanInfo());
+        graphicsQuality=getSharedPreferences("floresta_settings",MODE_PRIVATE).getInt("graphicsQuality",1);
 
         surface = new GLSurfaceView(this);
         surface.setEGLContextClientVersion(3);
@@ -76,7 +81,29 @@ public class MainActivity extends Activity {
         FrameLayout.LayoutParams header = new FrameLayout.LayoutParams(-2,-2,Gravity.TOP | Gravity.CENTER_HORIZONTAL);
         header.topMargin = dp(10);
         layout.addView(status, header);
+        qualityButton=new Button(this);
+        qualityButton.setAllCaps(false);
+        qualityButton.setTextSize(12);
+        qualityButton.setTextColor(Color.WHITE);
+        qualityButton.setBackgroundTintList(
+            android.content.res.ColorStateList.valueOf(0xCC103B31));
+        qualityButton.setText(graphicsLabel(graphicsQuality));
+        FrameLayout.LayoutParams preset=new FrameLayout.LayoutParams(-2,dp(42),
+            Gravity.TOP|Gravity.RIGHT);
+        preset.topMargin=dp(5);preset.rightMargin=dp(9);
+        layout.addView(qualityButton,preset);
+        qualityButton.setOnClickListener(v->{
+            graphicsQuality=(graphicsQuality+1)%3;
+            qualityButton.setText(graphicsLabel(graphicsQuality));
+            getSharedPreferences("floresta_settings",MODE_PRIVATE).edit()
+                .putInt("graphicsQuality",graphicsQuality).apply();
+            surface.queueEvent(()->nativeSetGraphicsQuality(graphicsQuality));
+        });
         setContentView(layout);
+    }
+
+    private static String graphicsLabel(int level){
+        return level==0?"Gráficos: ECO":(level==2?"Gráficos: ULTRA":"Gráficos: ALTA");
     }
 
     private int dp(float pixels) {return Math.round(pixels*getResources().getDisplayMetrics().density);}
@@ -105,6 +132,7 @@ public class MainActivity extends Activity {
         private int frames=0;
         @Override public void onSurfaceCreated(GL10 unused, EGLConfig config) {
             nativeCreate();
+            nativeSetGraphicsQuality(graphicsQuality);
             String saved=getSharedPreferences("floresta_save",MODE_PRIVATE).getString("progress",null);
             if(saved!=null)nativeLoad(saved);
             String[] files = {"grass.png","soil.png","moss.png","bark.png",
