@@ -43,6 +43,17 @@ static Mat4 perspective(float fov,float aspect,float zn,float zf){
     o.m[0]=f/aspect; o.m[5]=f; o.m[10]=(zf+zn)/(zn-zf);
     o.m[11]=-1.f; o.m[14]=2.f*zf*zn/(zn-zf); return o;
 }
+static Mat4 orthographic(float left,float right,float bottom,float top,float nearPlane,float farPlane){
+    Mat4 o;
+    o.m[0]=2.f/(right-left);
+    o.m[5]=2.f/(top-bottom);
+    o.m[10]=-2.f/(farPlane-nearPlane);
+    o.m[12]=-(right+left)/(right-left);
+    o.m[13]=-(top+bottom)/(top-bottom);
+    o.m[14]=-(farPlane+nearPlane)/(farPlane-nearPlane);
+    o.m[15]=1.f;
+    return o;
+}
 static Mat4 lookAt(Vec3 eye,Vec3 at){
     Vec3 f=normalize(at-eye),s=normalize(cross(f,{0,1,0})),u=cross(s,f);
     Mat4 o;
@@ -160,7 +171,23 @@ in vec3 vP;in vec3 vN;in vec2 vUV;
 uniform sampler2D uGrass,uDirt,uMoss,uGrassNormal,uDirtNormal,uMossNormal;
 uniform vec3 uEye,uFog,uSun;
 uniform float uLight;
+uniform sampler2DShadow uSunShadow;
+uniform mat4 uSunShadowVP;
+uniform float uShadowsEnabled,uShadowTexel;
 out vec4 Frag;
+float visibleSun(vec3 world,vec3 normal){
+    if(uShadowsEnabled<.5)return 1.0;
+    vec4 clip=uSunShadowVP*vec4(world,1.0);
+    vec3 pos=clip.xyz/max(clip.w,.0001)*.5+.5;
+    if(pos.x<=0.0||pos.x>=1.0||pos.y<=0.0||pos.y>=1.0||pos.z<=0.0||pos.z>=1.0)return 1.0;
+    float bias=max(.0005,(1.0-max(dot(normal,normalize(uSun)),0.0))*.0019);
+    float sum=0.0;
+    for(int y=0;y<2;y++)for(int x=0;x<2;x++){
+        vec2 off=(vec2(float(x),float(y))-.5)*uShadowTexel*1.8;
+        sum+=texture(uSunShadow,vec3(pos.xy+off,pos.z-bias));
+    }
+    return sum*.25;
+}
 float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
 float ggxSpec(vec3 N,vec3 V,vec3 L,float roughness){
     vec3 H=normalize(V+L);
@@ -190,10 +217,14 @@ void main(){
     float wet=clamp(moss*.4+dirt*.22,0.0,.34);
     float roughness=mix(.94,.69,wet);
     float highlight=ggxSpec(n,V,L,roughness)*diffuse*.30;
-    vec3 rgb=albedo*(.28+.79*diffuse*uLight)+vec3(highlight*uLight);
+    float sunVisibility=visibleSun(vP,n);
+    float ambient=.22+.11*max(n.y,0.0);
+    vec3 rgb=albedo*(ambient+.82*diffuse*uLight*(.23+.77*sunVisibility))+
+             vec3(highlight*uLight*sunVisibility);
     rgb*=1.0-.12*smoothstep(.12,.7,slope);
-    rgb=rgb/(rgb+vec3(.34));
-    rgb=pow(rgb,vec3(.92));
+    // Filmic, channel-wise highlight compression instead of harsh clip.
+    rgb=(rgb*(2.51*rgb+.03))/(rgb*(2.43*rgb+.59)+.14);
+    rgb=pow(max(rgb,vec3(0.0)),vec3(.91));
     float fog=smoothstep(92.0,276.0,distance(uEye,vP));
     Frag=vec4(mix(rgb,uFog,fog),1.0);
 }
@@ -244,6 +275,9 @@ uniform sampler2D uTex,uMaterialNormal;
 uniform vec4 uAtlasRect;
 uniform vec3 uEye,uFog,uSun;
 uniform float uLight,uCutout,uEmissive,uRoughness,uBump,uFoliage;
+uniform sampler2DShadow uSunShadow;
+uniform mat4 uSunShadowVP;
+uniform float uShadowsEnabled;
 out vec4 Frag;
 float specGGX(vec3 N,vec3 V,vec3 L,float roughness){
     vec3 H=normalize(V+L);
@@ -256,7 +290,9 @@ float specGGX(vec3 N,vec3 V,vec3 L,float roughness){
     return d*g*f/(4.0*max(nl*nv,.05));
 }
 void main(){
-    vec2 uv=uAtlasRect.xy+clamp(vUV,vec2(.002),vec2(.998))*uAtlasRect.zw;
+    // Non-atlas materials (notably bark) MUST keep their repeating UVs.
+    vec2 uv=(uAtlasRect.z<.99)?
+          uAtlasRect.xy+clamp(vUV,vec2(.002),vec2(.998))*uAtlasRect.zw:vUV;
     vec4 s=texture(uTex,uv);
     if(s.a<uCutout)discard;
     vec3 n=normalize(vN),V=normalize(uEye-vP),L=normalize(uSun);
@@ -274,8 +310,17 @@ void main(){
         }
     }
     float nl=dot(n,L);
+    float visibility=1.0;
+    if(uShadowsEnabled>.5){
+        vec4 clip=uSunShadowVP*vec4(vP,1.0);
+        vec3 sp=clip.xyz/max(.0001,clip.w)*.5+.5;
+        if(all(greaterThan(sp,vec3(0.0)))&&all(lessThan(sp,vec3(1.0)))){
+            visibility=texture(uSunShadow,vec3(sp.xy,sp.z-.0015));
+        }
+    }
     float diff=uFoliage>.5 ? (.43+.57*max(nl*.7+.30,0.0)) : (.26+.78*max(nl,0.0)*uLight);
-    vec3 rgb=s.rgb*diff*(.82+vTint*.33);
+    vec3 rgb=s.rgb*diff*(.82+vTint*.33)*
+        mix(1.0,.42+.58*visibility,max(dot(n,L),0.0));
     if(uFoliage>.5){
         float transmission=pow(max(-nl,0.0),1.7)*.23*uLight;
         rgb+=s.rgb*vec3(.38,.60,.18)*transmission;
@@ -338,6 +383,35 @@ void main(){
     float disk=smoothstep(.99935,.99978,cosSun)*uSunPower;
     sky+=vec3(1.0,.83,.53)*disk*.95;
     Frag=vec4(sky,1.0);
+}
+)GLSL";
+static const char* TREE_DEPTH_VS=R"GLSL(#version 300 es
+precision highp float;
+layout(location=0) in vec3 aPos;
+layout(location=2) in vec2 aUV;
+layout(location=3) in vec4 aInst;
+layout(location=4) in vec4 aMeta;
+uniform mat4 uLightVP;
+out vec2 vUV;
+void main(){
+  float a=aMeta.x;
+  vec3 p=aPos*aInst.w;
+  vec3 world=vec3(p.x*cos(a)-p.z*sin(a),p.y,p.x*sin(a)+p.z*cos(a))+aInst.xyz;
+  gl_Position=uLightVP*vec4(world,1.0);
+  vUV=aUV;
+}
+)GLSL";
+static const char* TREE_DEPTH_FS=R"GLSL(#version 300 es
+precision highp float;
+in vec2 vUV;
+uniform sampler2D uMask;
+uniform vec4 uRect;
+uniform float uThreshold;
+layout(location=0) out vec4 unusedOutput;
+void main(){
+  vec2 uv=(uRect.z<.99)?uRect.xy+clamp(vUV,vec2(.002),vec2(.998))*uRect.zw:vUV;
+  if(uThreshold>0.0 && texture(uMask,uv).a<uThreshold)discard;
+  unusedOutput=vec4(1.0);
 }
 )GLSL";
 static const char* SHADOW_VS=R"GLSL(#version 300 es
@@ -407,7 +481,11 @@ struct Batches {
 struct Relic {float x,z;bool picked=false;};
 struct State {
     int width=1280,height=720;
-    GLuint terrainProg=0,instProg=0,shadowProg=0,skyProg=0,skyVao=0;
+    GLuint terrainProg=0,instProg=0,shadowProg=0,skyProg=0,skyVao=0,treeDepthProg=0;
+    GLuint treeDepthFbo=0,treeDepthTex=0;
+    int depthMapSize=0;
+    bool treeDepthReady=false;
+    Mat4 sunShadowMatrix{};
     GLuint tex[21]{};
     GLuint windTex=0;
     bool windVulkan=false;
@@ -611,9 +689,111 @@ static void update(float dt){
     }
     game.collect=false;
 }
+static bool ensureSunShadowFbo(int size){
+    if(game.treeDepthReady&&size==game.depthMapSize)return true;
+    if(game.treeDepthFbo)glDeleteFramebuffers(1,&game.treeDepthFbo);
+    if(game.treeDepthTex)glDeleteTextures(1,&game.treeDepthTex);
+    game.treeDepthFbo=game.treeDepthTex=0;
+    game.treeDepthReady=false;
+    game.depthMapSize=size;
+    glGenTextures(1,&game.treeDepthTex);
+    glBindTexture(GL_TEXTURE_2D,game.treeDepthTex);
+    glTexImage2D(GL_TEXTURE_2D,0,GL_DEPTH_COMPONENT24,size,size,0,
+                 GL_DEPTH_COMPONENT,GL_UNSIGNED_INT,nullptr);
+    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_COMPARE_MODE,GL_COMPARE_REF_TO_TEXTURE);
+    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_COMPARE_FUNC,GL_LEQUAL);
+    glGenFramebuffers(1,&game.treeDepthFbo);
+    glBindFramebuffer(GL_FRAMEBUFFER,game.treeDepthFbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER,GL_DEPTH_ATTACHMENT,GL_TEXTURE_2D,game.treeDepthTex,0);
+    GLenum status=glCheckFramebufferStatus(GL_FRAMEBUFFER);
+    if(status==GL_FRAMEBUFFER_COMPLETE){
+        const GLenum attachment=GL_NONE;
+        glDrawBuffers(1,&attachment);
+        game.treeDepthReady=true;
+    }else{
+        LOGE("Shadow FBO unsupported: 0x%x",unsigned(status));
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER,0);
+    return game.treeDepthReady;
+}
+static void treeShadowMaterial(int textureIndex,bool alpha){
+    if(alpha){
+        int layer=textureIndex==13?3:2;
+        float u=float(layer%2)*.5f,v=float(layer/2)*.5f;
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D,game.tex[19]);
+        glUniform4f(glGetUniformLocation(game.treeDepthProg,"uRect"),
+                    u+.00065f,v+.00065f,.4987f,.4987f);
+        glUniform1f(glGetUniformLocation(game.treeDepthProg,"uThreshold"),.44f);
+    }else{
+        glUniform1f(glGetUniformLocation(game.treeDepthProg,"uThreshold"),0.f);
+        glUniform4f(glGetUniformLocation(game.treeDepthProg,"uRect"),0,0,1,1);
+    }
+}
+static void castForestShadows(const std::vector<Instance>& broad,
+                              const std::vector<Instance>& pine,int quality){
+    if(!game.treeDepthProg||!ensureSunShadowFbo(quality==2?2048:(quality==0?768:1536)))return;
+    Vec3 center{game.x,height(game.x,game.z)+2.5f,game.z};
+    Vec3 sunlight=normalize({.62f,.87f,.33f});
+    Vec3 eye=center+sunlight*118.f;
+    float coverage=quality==2?100.f:(quality==0?65.f:82.f);
+    game.sunShadowMatrix=multiply(orthographic(-coverage,coverage,-coverage,coverage,
+                                             1.f,260.f),lookAt(eye,center));
+    glBindFramebuffer(GL_FRAMEBUFFER,game.treeDepthFbo);
+    glViewport(0,0,game.depthMapSize,game.depthMapSize);
+    glClear(GL_DEPTH_BUFFER_BIT);
+    glEnable(GL_DEPTH_TEST);
+    glDepthMask(GL_TRUE);
+    glDisable(GL_BLEND);
+    glUseProgram(game.treeDepthProg);
+    glUniformMatrix4fv(glGetUniformLocation(game.treeDepthProg,"uLightVP"),
+                       1,GL_FALSE,game.sunShadowMatrix.m);
+    glUniform1i(glGetUniformLocation(game.treeDepthProg,"uMask"),0);
+    // Keep shadows dense near player without drawing distant, invisible trees.
+    std::array<std::vector<Instance>,5> plants;
+    auto add=[&](const std::vector<Instance>& group,bool conifer){
+        for(const auto& t:group){
+            float dx=t.x-game.x,dz=t.z-game.z;
+            if(dx*dx+dz*dz>coverage*coverage)continue;
+            int species=conifer?3+std::min(1,int(t.tint*2.f)):std::min(2,int(t.tint*3.f));
+            plants[species].push_back(t);
+        }
+    };
+    add(broad,false);add(pine,true);
+    glEnable(GL_POLYGON_OFFSET_FILL);
+    glPolygonOffset(1.4f,2.0f);
+    for(int i=0;i<5;i++){
+        treeShadowMaterial(3,false);
+        instDraw(game.woodMid[i],plants[i]);
+        treeShadowMaterial(i>=3?13:11,true);
+        instDraw(game.leavesMid[i],plants[i]);
+    }
+    glDisable(GL_POLYGON_OFFSET_FILL);
+    glBindFramebuffer(GL_FRAMEBUFFER,0);
+}
+static void bindSunShadow(GLuint programId,int slot){
+    const bool active=game.treeDepthReady;
+    glUseProgram(programId);
+    glUniform1f(glGetUniformLocation(programId,"uShadowsEnabled"),active?1.f:0.f);
+    if(!active)return;
+    glUniformMatrix4fv(glGetUniformLocation(programId,"uSunShadowVP"),
+                       1,GL_FALSE,game.sunShadowMatrix.m);
+    glActiveTexture(GL_TEXTURE0+slot);
+    glBindTexture(GL_TEXTURE_2D,game.treeDepthTex);
+    glUniform1i(glGetUniformLocation(programId,"uSunShadow"),slot);
+    glUniform1f(glGetUniformLocation(programId,"uShadowTexel"),1.f/float(game.depthMapSize));
+}
+
 static void draw(float dt){
     if(!game.ready)return;
     update(dt);streamWorld();
+    if(game.graphicsQuality>0&&game.treeDepthProg)
+        castForestShadows(game.batches.broad,game.batches.pine,game.graphicsQuality);
+    else game.treeDepthReady=false;
     glViewport(0,0,game.width,game.height);
     // Soft daytime colors, with a slowly cycling evening phase.
     float cycle=.5f+.5f*std::sin(game.t*.0105f+.85f);
@@ -640,6 +820,7 @@ static void draw(float dt){
     Mat4 vp=multiply(proj,view);
     glEnable(GL_DEPTH_TEST);glDepthFunc(GL_LEQUAL);glDisable(GL_BLEND);
     common(game.terrainProg,vp,eye,fog,light);
+    bindSunShadow(game.terrainProg,6);
     for(int i=0;i<3;i++){
         glActiveTexture(GL_TEXTURE0+i);glBindTexture(GL_TEXTURE_2D,game.tex[i]);
         glActiveTexture(GL_TEXTURE3+i);glBindTexture(GL_TEXTURE_2D,game.tex[7+i]);
@@ -654,12 +835,16 @@ static void draw(float dt){
         glBindVertexArray(m.vao);glDrawElements(GL_TRIANGLES,m.count,GL_UNSIGNED_INT,nullptr);
     }
     glBindVertexArray(0);
+    // The circular placeholder shadow is only used when depth maps are unavailable.
+    if(!game.treeDepthReady){
     glUseProgram(game.shadowProg);
     glUniformMatrix4fv(glGetUniformLocation(game.shadowProg,"uVP"),1,GL_FALSE,vp.m);
     glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
     glDepthMask(GL_FALSE);instDraw(game.shadow,game.batches.shadow);glDepthMask(GL_TRUE);
     glDisable(GL_BLEND);
+    }
     common(game.instProg,vp,eye,fog,light);
+    bindSunShadow(game.instProg,4);
     glActiveTexture(GL_TEXTURE2);
     glBindTexture(GL_TEXTURE_2D,game.windTex);
     glUniform1i(glGetUniformLocation(game.instProg,"uWindField"),2);
@@ -753,6 +938,9 @@ static void initialize(){
     game.instProg=program(INST_VS,INST_FS);
     game.shadowProg=program(SHADOW_VS,SHADOW_FS);
     game.skyProg=program(SKY_VS,SKY_FS);
+    game.treeDepthProg=program(TREE_DEPTH_VS,TREE_DEPTH_FS);
+    game.treeDepthReady=false;
+    game.treeDepthFbo=game.treeDepthTex=0;
     if(game.skyProg)glGenVertexArrays(1,&game.skyVao);
     if(!game.terrainProg||!game.instProg||!game.shadowProg){LOGE("GLES shader initialization failed");return;}
     glGenBuffers(1,&instanceBuffer);
