@@ -1,0 +1,57 @@
+{
+  "encoder": "KTX-Software 4.4.2",
+  "url": "https://github.com/KhronosGroup/KTX-Software/releases/download/v4.4.2/KTX-Software-4.4.2-Linux-x86_64.tar.bz2",
+  "tool_sha256": "a8781bad05f9624edbf910b7f258cd0a4ba7d3e63b49ecc0a0ab440bf6a0a245",
+  "codec": "ASTC_6x6_UNORM with full mip chain",
+  "fallback": "PNG (ASTC extension absent)",
+  "files": [
+    {
+      "from": "grass.png",
+      "name": "grass.ktx2",
+      "codec": "ASTC_6x6_UNORM",
+      "mips": "generated",
+      "bytes": 626736,
+      "sha256": "0ca79a97bdad5cd0cc1d62699da6278374ea814f7b208fffc245dde9087c063c"
+    },
+    {
+      "from": "grass_normal.png",
+      "name": "grass_normal.ktx2",
+      "codec": "ASTC_6x6_UNORM",
+      "mips": "generated",
+      "bytes": 626736,
+      "sha256": "d8f660ac0c334549c62256541fca522ba964cda5ee4314e3405572d6b07673a3"
+    },
+    {
+      "from": "grass_rough.png",
+      "name": "grass_rough.ktx2",
+      "codec": "ASTC_6x6_UNORM",
+      "mips": "generated",
+      "bytes": 626736,
+      "sha256": "2862e2f68e561ce2987aac427c1c4ab7bd7f85446db7ba27f6a9e40c3b418fbc"
+    },
+    {
+      "from": "soil.png",
+      "name": "soil.ktx2",
+      "codec": "ASTC_6x6_UNORM",
+      "mips": "generated",
+      "bytes": 626736,
+      "sha256": "0b53d0c360e15c2f6059ce42974b41c35057b40f8893c9f92d7ff539142b5a3a"
+    },
+    {
+      "from": "soil_normal.png",
+      "name": "soil_normal.ktx2",
+      "codec": "ASTC_6x6_UNORM",
+      "mips": "generated",
+      "bytes": 626736,
+      "sha256": "3bc350e2db33faa76b80419de185256947a93458b0a41b682fbddc20393d96ef"
+    },
+    {
+      "from": "soil_rough.png",
+      "name": "soil_rough.ktx2",
+      "codec": "ASTC_6x6_UNORM",
+      "mips": "generated",
+      "bytes": 626736,
+      "sha256": "eda9a9097b8bbc6a8ca3bd2c3592485682f55d2928fa88f66d3d14c73aefd8fd"
+    }
+  ]
+}
