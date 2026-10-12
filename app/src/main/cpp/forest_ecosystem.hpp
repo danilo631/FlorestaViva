@@ -10,30 +10,50 @@ static float riverWidth(float z){
 static float riverLevel(float z){
     return -.52f+.51f*std::sin(z*.0023f+.8f)+.23f*std::sin(z*.0113f);
 }
+// All river systems use the same slope and normal-space metric.
+// Previously the water used raw X width while the banks used projected
+// distance, leaving broad dry trenches where the river bends.
+static float riverSlope(float z){
+    return 78.f*.0067f*std::cos(z*.0067f)+
+           24.f*.020f*std::cos(z*.020f+.47f);
+}
+static float riverScaleX(float z){
+    return std::sqrt(1.f+riverSlope(z)*riverSlope(z));
+}
 static float riverDistance(float x,float z){
-    // Signed x-distance to smooth river spline, corrected for winding banks.
-    float gradient=78.f*.0067f*std::cos(z*.0067f)+
-                   24.f*.020f*std::cos(z*.020f+.47f);
-    return std::fabs(x-riverCenter(z))/std::sqrt(1.f+gradient*gradient);
+    return std::fabs(x-riverCenter(z))/riverScaleX(z);
 }
 static float waterFraction(float x,float z){
     const float w=riverWidth(z);
     const float t=(riverDistance(x,z)-w)/(7.5f);
     return clampf(t,0.f,1.f);
 }
+// Channel carving and surface geometry agree at the waterline.
+// The bank's first 3 meters form a beach instead of a vertical black cliff.
+// Smooth transitions prevent cracks at neighboring chunk borders.
 static float forestTerrainHeight(float x,float z,float base){
-    const float river=riverLevel(z);
-    const float width=riverWidth(z);
-    const float d=riverDistance(x,z);
-    if(d>width+10.0f)return base;
-    // Ensure water is above its carved bed; shores remain traversable and dry.
-    const float shore=std::max(base,river+.65f);
-    const float nearBank=clampf((d-width)/10.f,0.f,1.f);
-    const float eased=nearBank*nearBank*(3.f-2.f*nearBank);
-    const float channel=clampf(d/(width),0.f,1.f);
-    const float bottom=river-1.35f+.17f*channel*channel;
-    const float bank=bottom+(shore-bottom)*eased;
-    return base*eased+bank*(1.f-eased);
+    const float level=riverLevel(z);
+    const float d=riverDistance(x,z),w=riverWidth(z);
+    if(d>=w+20.f)return base;
+    if(d<=w){
+        const float t=clampf(d/w,0.f,1.f);
+        const float eased=t*t*(3.f-2.f*t);
+        const float underwater=1.42f*(1.f-eased);
+        return level-.038f-underwater;
+    }
+    if(d<=w+3.0f){
+        const float t=clampf((d-w)/3.f,0.f,1.f);
+        const float eased=t*t*(3.f-2.f*t);
+        return level-.038f+eased*.36f;
+    }
+    const float raised=std::max(base,level+.32f);
+    if(d<w+10.f){
+        const float t=clampf((d-w-3.f)/7.f,0.f,1.f);
+        return (level+.322f)*(1.f-t)+raised*t;
+    }
+    const float t=clampf((d-w-10.f)/10.f,0.f,1.f);
+    const float eased=t*t*(3.f-2.f*t);
+    return raised*(1.f-eased)+base*eased;
 }
 enum class ForestBiome : unsigned char{Broadleaf=0,Conifer=1,Wetland=2,Meadow=3};
 static ForestBiome forestBiome(float x,float z){
