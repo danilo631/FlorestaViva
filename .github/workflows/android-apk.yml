@@ -155,6 +155,29 @@ jobs:
                   assert 0<vals[0]<255 and 0<vals[1]<255 and vals[2]<.01,vals
           print("9 validated CC0 scanned PBR families + packed ORM; source checksums recorded")
           PY
+      - name: Fase 1 - importar dois modelos glTF CC0 com LOD para Android
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check trimesh fast-simplification
+          python tools/fetch_models.py
+          python - <<'PY'
+          import json,struct
+          from pathlib import Path
+          root=Path("app/src/main/assets")
+          data=json.loads((root/"scanned_models_manifest.json").read_text())
+          assert len(data)==2
+          for model in data:
+              assert len(model["converted"])==3
+              for lod in model["converted"]:
+                  path=root/lod["filename"]
+                  blob=path.read_bytes()
+                  assert blob[:8]==b'FVME0001'
+                  verts,indices=struct.unpack_from("<II",blob,8)
+                  assert verts>30 and indices>90 and indices%3==0
+                  assert len(blob)==16+verts*48+indices*4
+                  print("VALID GLTF LOD",lod["filename"],indices//3,"triangles")
+          PY
       - name: Preparar prévia dos materiais fotografados
         run: |
           python tools/material_preview.py
