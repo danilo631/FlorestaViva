@@ -32,15 +32,13 @@ static std::vector<ForestMeshlet> forestClusterMesh(
     for(uint32_t k=0;k<data.i.size();k+=3){
         uint32_t candidate[3]={data.i[k],data.i[k+1],data.i[k+2]};
         uint32_t extra=0;
-        for(uint32_t vertex:candidate){
-            if(std::find(vertexSet.begin(),vertexSet.end(),vertex)==vertexSet.end()){
-                bool earlier=false;
-                for(uint32_t m:candidate){if(m==vertex){break;}if(m==vertex)earlier=true;}
-                if(!earlier)extra++;
-            }
+        for(int c=0;c<3;c++){
+            const uint32_t vertex=candidate[c];
+            bool earlier=false;
+            for(int i=0;i<c;i++)if(candidate[i]==vertex){earlier=true;break;}
+            if(!earlier && std::find(vertexSet.begin(),vertexSet.end(),vertex)==vertexSet.end())extra++;
         }
-        // Triangle indices often repeat around split corners; double-count
-        // is only conservative (can never exceed the vertex budget).
+        // Prevent more than 64 distinct vertices per cluster.
         if(count && (count>=maxTriangles || vertexSet.size()+extra>maxVertices)){
             close(start,count);
             start=k/3;count=0;
