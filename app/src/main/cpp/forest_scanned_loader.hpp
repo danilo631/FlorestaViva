@@ -1,4 +1,9 @@
 #pragma once
+#include <cstdint>
+#include <cstring>
+#include <cmath>
+#include <utility>
+#include <vector>
 // Verified build-time converted glTF -> FVME mobile mesh.
 // This is a compact loader, NOT a glTF runtime parser; it preserves
 // scanned vertex positions/normals/UVs and bounds memory allocations.
