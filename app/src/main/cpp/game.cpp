@@ -488,7 +488,19 @@ uniform sampler2D uColor;
 uniform sampler2D uDepth;
 uniform vec2 uResolution;
 uniform float uQuality;
+uniform sampler2DShadow uSunShadow;
+uniform mat4 uSunShadowVP;
+uniform vec3 uEye,uSunDirection;
+uniform vec2 uCamera;
+uniform float uGodRaysEnabled;
 out vec4 Frag;
+float sampleSun(vec3 world){
+    vec4 clip=uSunShadowVP*vec4(world,1.);
+    vec3 q=clip.xyz/max(clip.w,.0001)*.5+.5;
+    if(any(lessThanEqual(q,vec3(0.))) ||
+       any(greaterThanEqual(q,vec3(1.))))return 1.;
+    return texture(uSunShadow,vec3(q.xy,q.z-.0017));
+}
 float lum(vec3 c){return dot(c,vec3(.299,.587,.114));}
 float linearDepth(float d){
     const float nearPlane=.11;
@@ -531,6 +543,42 @@ void main(){
             }
             float fade=1.0-smoothstep(20.0,44.0,sceneDistance);
             rgb*=1.0-occlusion*.022*fade;
+        }
+    }
+    // ULTRA only: four-step screen-space volumetric single-scattering.
+    // Samples the SAME foliage shadow atlas along camera rays. Sunlit air
+    // between leaf silhouettes produces modest shafts without a full 3D fog
+    // voxel allocation or an expensive second full-resolution render pass.
+    if(uGodRaysEnabled>.5){
+        vec2 screen=uv*2.-1.;
+        float aspect=uResolution.x/max(1.,uResolution.y);
+        float yaw=uCamera.x,pitch=uCamera.y;
+        vec3 fw=vec3(sin(yaw)*cos(pitch),sin(pitch),cos(yaw)*cos(pitch));
+        vec3 right=normalize(cross(fw,vec3(0.,1.,0.)));
+        vec3 up=normalize(cross(right,fw));
+        vec3 ray=normalize(fw+screen.x*aspect*.6745*right+
+                             screen.y*.6745*up);
+        float scattering=pow(max(dot(ray,normalize(uSunDirection)),0.),2.2);
+        if(scattering>.015){
+            float tEnd=depth0>.999?68.:min(68.,linearDepth(depth0));
+            float stepsize=(tEnd-2.0)*.25;
+            float total=0.;
+            if(stepsize>0.){
+                for(int i=0;i<4;i++){
+                    float d=2.0+(float(i)+.5)*stepsize;
+                    vec3 pos=uEye+ray*d;
+                    float density=exp(-max(pos.y-5.,0.)*.028)*
+                            exp(-d*.013);
+                    float sunlight=sampleSun(pos);
+                    total+=sunlight*density;
+                }
+                float source=(total*.25)*scattering;
+                vec3 aerial=vec3(1.,.86,.64)*source*.11*
+                             (1.-exp(-tEnd*.046));
+                rgb=mix(rgb,vec3(.69,.75,.70),.018*
+                        (1.-exp(-tEnd*.035)));
+                rgb+=aerial;
+            }
         }
     }
     // Color grade after rendering, preserving the existing material PBR curve.
@@ -1137,7 +1185,7 @@ static bool ensurePostFrameBuffer(){
     if(!ok)LOGE("Postprocessing FBO unavailable: direct rendering fallback");
     return ok;
 }
-static void presentPostFrame(){
+static void presentPostFrame(Vec3 eye){
     glBindFramebuffer(GL_FRAMEBUFFER,0);
     glViewport(0,0,game.width,game.height);
     glDisable(GL_BLEND);
@@ -1152,6 +1200,19 @@ static void presentPostFrame(){
                 float(game.width),float(game.height));
     glUniform1f(glGetUniformLocation(game.postProg,"uQuality"),
                 game.graphicsQuality==2?2.0f:0.0f);
+    const bool shafts=game.graphicsQuality==2 && game.treeDepthReady;
+    glUniform1f(glGetUniformLocation(game.postProg,"uGodRaysEnabled"),
+                shafts?1.f:0.f);
+    if(shafts){
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_2D,game.treeDepthTex);
+        glUniform1i(glGetUniformLocation(game.postProg,"uSunShadow"),2);
+        glUniformMatrix4fv(glGetUniformLocation(game.postProg,"uSunShadowVP"),
+                           1,GL_FALSE,game.sunShadowMatrix.m);
+        set3(game.postProg,"uEye",eye);
+        set3(game.postProg,"uSunDirection",normalize({.62f,.87f,.33f}));
+        glUniform2f(glGetUniformLocation(game.postProg,"uCamera"),game.yaw,game.pitch);
+    }
     glBindVertexArray(game.skyVao);
     glDrawArrays(GL_TRIANGLES,0,3);
     glBindVertexArray(0);
@@ -1414,7 +1475,7 @@ static void draw(float dt){
         glDepthMask(GL_TRUE);
         glDisable(GL_BLEND);
     }
-    if(usePost)presentPostFrame();
+    if(usePost)presentPostFrame(eye);
 }
 static void initialize(){
     // Called with a current, potentially new, GLES context.
@@ -1468,7 +1529,7 @@ static void initialize(){
     game.windTex=createTexture();
     game.ready=true;
     glDisable(GL_CULL_FACE);
-    LOGE("Engine ready: Graphics 9 clipped river, scanned pebble PBR, hemispherical raster lighting, frustum culling");
+    LOGE("Engine ready: Graphics 10 god rays, canopy-aware 4-layer PCG, reactive plants, foliage transmission");
 }
 extern "C" JNIEXPORT void JNICALL
 Java_com_florestaviva_game_MainActivity_nativeCreate(JNIEnv*,jclass){initialize();}
