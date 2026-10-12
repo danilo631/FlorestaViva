@@ -2,7 +2,7 @@ name: Gerar APK Android
 on:
   workflow_dispatch:
   push:
-    branches: [main, master, graphics3-atlas-vulkan-sky, graphics4-procedural-aaa-vegetation, graphics5-dense-vegetation-vulkan-compute, graphics6-shadows-material-rework, graphics7-scanned-foliage-postfx, graphics8-rivers-wildlife-quests-arm64]
+    branches: [main, master, graphics3-atlas-vulkan-sky, graphics4-procedural-aaa-vegetation, graphics5-dense-vegetation-vulkan-compute, graphics6-shadows-material-rework, graphics7-scanned-foliage-postfx, graphics8-rivers-wildlife-quests-arm64, graphics9-river-rebuild-raster-lighting]
   pull_request:
     branches: [main]
 permissions:
@@ -88,10 +88,23 @@ jobs:
               assert im.width>=512 and im.height>=512,name
           assert Image.open(a/'wildlife_fur.png').size == (1536,512)
           PY
+      - name: Substituir pedras artificiais por seixos fotográficos CC0
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tools/photographic_riverbed.py
+          python - <<'PY'
+          from PIL import Image
+          from pathlib import Path
+          a=Path('app/src/main/assets')
+          for name in ('riverbed.png','riverbed_normal.png'):
+              with Image.open(a/name) as im:
+                  assert im.size == (2048,2048), (name,im.size)
+          PY
       - name: Preparar prévia dos materiais fotografados
         run: |
           python tools/material_preview.py
-          cp build/Graphics7_Materials_Preview.jpg build/Graphics8_Materials_Preview.jpg
+          cp build/Graphics7_Materials_Preview.jpg build/Graphics9_Materials_Preview.jpg
       - name: Compilar shaders Vulkan de teste
         shell: bash
         run: |
@@ -127,12 +140,13 @@ jobs:
           java=Path('app/src/main/java/com/florestaviva/game/MainActivity.java').read_text()
           group=java.split('String[] files = {',1)[1].split('};',1)[0]
           entries=re.findall(r'"([^"]*)"',group)
-          assert len(entries)==30,entries
+          assert len(entries)==31,entries
           assert entries[19:21] == ['foliage_color.png','foliage_normal.png'],entries
           assert entries[21:25] == ['grass_rough.png','soil_rough.png',
                                    'bark_rough.png','pine_bark_rough.png'],entries
-          assert entries[25:] == ['river_normal.png','riverbed.png',
+          assert entries[25:30] == ['river_normal.png','riverbed.png',
                                   'wildlife_fur.png','wildlife_fur_normal.png','wildflowers.png'],entries
+          assert entries[30:] == ['riverbed_normal.png'],entries
           asset=Path('app/src/main/assets')
           for filename in entries:
               if filename: assert (asset/filename).exists(),filename
@@ -171,7 +185,7 @@ jobs:
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: FlorestaViva-Graphics8-APK
+          name: FlorestaViva-Graphics9-APK
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
       - name: Publicar APK direto em GitHub Releases
@@ -181,16 +195,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cp app/build/outputs/apk/debug/app-debug.apk FlorestaViva-Graphics8.apk
-          if ! gh release view graphics8 >/dev/null 2>&1; then
-            gh release create graphics8 --title 'Floresta Viva Graphics 8' --notes 'Graphics 8: rios, fauna com 3 especies, 4 biomas, 4 missoes e salto. APK com assets embutidos, exclusivo Android ARM64. Assinado com chave debug temporaria: a atualizacao sobre uma versao anterior pode exigir desinstalacao, apagando o progresso.'
+          cp app/build/outputs/apk/debug/app-debug.apk FlorestaViva-Graphics9.apk
+          if ! gh release view graphics9 >/dev/null 2>&1; then
+            gh release create graphics9 --title 'Floresta Viva Graphics 9' --notes 'Graphics 9: rio reparado com malha clipada por chunk, margens fotografadas CC0 e iluminação raster fisicamente inspirada. Inclui fauna, biomas, missoes e salto. APK com assets embutidos, exclusivo Android ARM64. Assinado com chave debug temporaria: a atualizacao sobre uma versao anterior pode exigir desinstalacao, apagando o progresso.'
           fi
-          gh release upload graphics8 FlorestaViva-Graphics8.apk --clobber
+          gh release upload graphics9 FlorestaViva-Graphics9.apk --clobber
       - name: Publicar comparação dos materiais
         uses: actions/upload-artifact@v4
         with:
-          name: FlorestaViva-Graphics8-Material-Preview
-          path: build/Graphics8_Materials_Preview.jpg
+          name: FlorestaViva-Graphics9-Material-Preview
+          path: build/Graphics9_Materials_Preview.jpg
           if-no-files-found: error
       - name: Publicar modelos 3D editáveis
         uses: actions/upload-artifact@v4

@@ -35,6 +35,20 @@ int main(){
         if(biome!=ForestBiome::Wetland)
             throw std::runtime_error("River center must be wetland");
     }
+    // The corrected water edges match the normal-space channel carving,
+    // including high-curvature river bends.
+    for(float z=-900.f;z<900.f;z+=11.23f){
+        const float halfWidth=riverWidth(z)+.85f;
+        const float left=riverMeshX(z,0.f),right=riverMeshX(z,1.f);
+        if(std::fabs(riverDistance(left,z)-halfWidth)>.003f)
+            throw std::runtime_error("Left bank is not aligned with riverbed");
+        if(std::fabs(riverDistance(right,z)-halfWidth)>.003f)
+            throw std::runtime_error("Right bank is not aligned with riverbed");
+        const float water=riverLevel(z)+.035f;
+        const float atBank=forestTerrainHeight(right,z,1.7f);
+        if(std::fabs(water-atBank)>.12f)
+            throw std::runtime_error("Visible waterline gap / cliff at right bank");
+    }
     // No duplicate entire river surface per x-chunk; triangle ranges clipped.
     int nonempty=0;
     for(int cx=-4;cx<=4;cx++)for(int cz=-4;cz<=4;cz++){
@@ -43,6 +57,15 @@ int main(){
         nonempty++;
         for(uint32_t index:m.i)if(index>=m.v.size())
             throw std::runtime_error("Water mesh invalid index");
+        for(size_t k=0;k<m.i.size();k+=3){
+            const auto& a=m.v[m.i[k]];
+            const auto& b=m.v[m.i[k+1]];
+            const auto& c=m.v[m.i[k+2]];
+            const float signedY=(b.z-a.z)*(c.x-a.x)-
+                                 (b.x-a.x)*(c.z-a.z);
+            if(signedY<=.0000005f)
+                throw std::runtime_error("River has inverted or degenerate triangle");
+        }
         for(const auto& v:m.v){
             if(v.x<float(cx*CHUNK)-.0001f||
                v.x>float((cx+1)*CHUNK)+.0001f)

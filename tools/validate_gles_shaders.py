@@ -8,10 +8,15 @@ import re
 import subprocess
 import tempfile
 import sys
-source=Path("app/src/main/cpp/game.cpp").read_text()
+source=("\n".join(Path(path).read_text() for path in (
+    "app/src/main/cpp/game.cpp",
+    "app/src/main/cpp/forest_river.hpp"
+)))
 pattern=r'static const char\* ([A-Z0-9_]+)=R"GLSL\((.*?)\)GLSL";'
 shaders=re.findall(pattern,source,re.S)
-if len(shaders)<10:
+if not any(n=="RIVER_VS" for n,_ in shaders) or not any(n=="RIVER_FS" for n,_ in shaders):
+    raise SystemExit("river shaders absent from validator")
+if len(shaders)<12:
     raise SystemExit("missing embedded GLES shaders")
 with tempfile.TemporaryDirectory() as dirname:
     base=Path(dirname)
