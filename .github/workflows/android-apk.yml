@@ -2,7 +2,7 @@ name: Gerar APK Android
 on:
   workflow_dispatch:
   push:
-    branches: [main, master, graphics3-atlas-vulkan-sky, graphics4-procedural-aaa-vegetation, graphics5-dense-vegetation-vulkan-compute, graphics6-shadows-material-rework, graphics7-scanned-foliage-postfx, graphics8-rivers-wildlife-quests-arm64, graphics9-river-rebuild-raster-lighting, graphics10-forest-atmosphere-pcg-pbr, graphics11-pivot-survival-polyhaven-api]
+    branches: [main, feat/step1-audit-assets, feat/step2-refactor]
   pull_request:
     branches: [main]
 permissions:
@@ -14,6 +14,38 @@ jobs:
     steps:
       - name: Baixar projeto
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fixar tag de rollback e registrar auditoria de commits
+        if: github.ref == 'refs/heads/feat/step1-audit-assets'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p build/audit
+          git log --oneline -n 30 | tee build/audit/git_log_30.txt
+          git diff --stat eaca26c8b34d5287c4278e0cecaf8ffd2b7b5084..HEAD | tee build/audit/phase0_to_head_diff_stat.txt
+          if ! git ls-remote --tags origin refs/tags/pre-step1 | grep -q pre-step1; then
+            git tag pre-step1 c58078c495e0d20fb955265a34e974d389a25bb1
+            git push origin refs/tags/pre-step1
+          fi
+          git show-ref --tags pre-step1 | tee build/audit/rollback_tag.txt
+      - name: Auditar bytes reais dos assets versionados
+        if: github.ref == 'refs/heads/feat/step1-audit-assets'
+        run: |
+          python -m pip install --disable-pip-version-check pillow
+          python tools/audit_repository.py --output build/audit/source_assets.json
+          grep -nE 'texture\\(u(GrassNormal|DirtNormal|MossNormal|MaterialNormal|GrassRough|DirtRough|MossRough|MaterialRough)' app/src/main/cpp/game.cpp > build/audit/shader_sample_reads.txt
+          cat build/audit/shader_sample_reads.txt
+          python -m json.tool assets_manifest.json > build/audit/asset_manifest.json
+          cp CREDITS.md build/audit/CREDITS.md
+      - name: Publicar auditoria reprodutível de origem
+        if: github.ref == 'refs/heads/feat/step1-audit-assets'
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase1-source-audit
+          path: build/audit/
       - name: Configurar Java 17
         uses: actions/setup-java@v4
         with:
@@ -178,6 +210,10 @@ jobs:
                   assert len(blob)==16+verts*48+indices*4
                   print("VALID GLTF LOD",lod["filename"],indices//3,"triangles")
           PY
+      - name: Auditar materiais efetivamente incorporados ao APK
+        if: github.ref == 'refs/heads/feat/step1-audit-assets'
+        run: |
+          python tools/audit_repository.py --include-untracked             --output build/audit/baked_assets.json
       - name: Preparar prévia dos materiais fotografados
         run: |
           python tools/material_preview.py
@@ -251,6 +287,19 @@ jobs:
           set -euo pipefail
           g++ -std=c++17 -O2 -Wall -Wextra tests/river_biome_test.cpp -o /tmp/river_biome_test
           /tmp/river_biome_test
+      - name: Compartilhar assets reais para captura Android x86_64
+        if: github.ref == 'refs/heads/feat/step1-audit-assets'
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase1-baked-assets
+          path: app/src/main/assets/
+          retention-days: 3
+      - name: Publicar SHA256 comparativos da versão compilada
+        if: github.ref == 'refs/heads/feat/step1-audit-assets'
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase1-baked-audit
+          path: build/audit/
       - name: Compilar APK Debug
         run: gradle :app:assembleDebug --stacktrace --no-daemon
       - name: Confirmar APK Android 64 bits
@@ -297,3 +346,59 @@ jobs:
           name: FlorestaViva-3D-Trees-OBJ
           path: build/forest-models/
           if-no-files-found: error
+
+
+  capture:
+    if: github.ref == 'refs/heads/feat/step1-audit-assets'
+    needs: android
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - name: Checkout code and emulator capture harness
+        uses: actions/checkout@v4
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Gradle 8.13
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+      - name: Fetch built and pinned PBR assets
+        uses: actions/download-artifact@v4
+        with:
+          name: phase1-baked-assets
+          path: app/src/main/assets
+      - name: Install native Android x86_64 build tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          MGR="$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f | sort -V | tail -1)"
+          "$MGR" --sdk_root="$ANDROID_HOME" --licenses < <(yes) > /dev/null
+          "$MGR" --sdk_root="$ANDROID_HOME" --install 'platforms;android-35' 'build-tools;35.0.0' 'ndk;28.2.13676358' 'cmake;3.22.1'
+          gradle :app:assembleDebug -PforestAbi=x86_64 --no-daemon --stacktrace
+          python - <<'PY'
+          import zipfile
+          apk='app/build/outputs/apk/debug/app-debug.apk'
+          with zipfile.ZipFile(apk) as zip:
+              assert 'lib/x86_64/libflorestaviva.so' in zip.namelist()
+          print('PASS debug x86_64 emulator APK, production remains ARM64')
+          PY
+      - name: Render screenshots with Android SwiftShader software GPU
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -no-audio -no-snapshot -gpu swiftshader_indirect -no-boot-anim
+          script: bash tools/ci_capture_android.sh
+      - name: Upload 4 fixed-camera frames and short screenrecord
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase1-emulator-before-screenshots-and-video
+          path: build/emulator/
+          if-no-files-found: warn

@@ -26,6 +26,7 @@ public class MainActivity extends Activity {
     static { System.loadLibrary("florestaviva"); }
 
     public static native void nativeCreate();
+    public static native void nativeDebugCamera(int scene);
     public static native void nativeSetGraphicsQuality(int level);
     public static native String nativeVulkanInfo();
     public static native String nativeBakeWind(android.content.res.AssetManager assets);
@@ -153,6 +154,11 @@ public class MainActivity extends Activity {
             nativeSetGraphicsQuality(graphicsQuality);
             String saved=getSharedPreferences("floresta_save",MODE_PRIVATE).getString("progress",null);
             if(saved!=null)nativeLoad(saved);
+            // Emulator-only deterministic reference views. Never in release APK.
+            if((getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE)!=0 &&
+               getIntent().hasExtra("captureScene")){
+                nativeDebugCamera(Math.max(0,Math.min(3,getIntent().getIntExtra("captureScene",0))));
+            }
             String[] files = {"grass.png","soil.png","moss.png","bark.png",
                     "canopy.png","","",
                     "grass_normal.png","soil_normal.png","moss_normal.png","bark_normal.png",

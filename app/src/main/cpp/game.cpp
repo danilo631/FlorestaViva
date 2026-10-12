@@ -1691,6 +1691,20 @@ static void initialize(){
 }
 extern "C" JNIEXPORT void JNICALL
 Java_com_florestaviva_game_MainActivity_nativeCreate(JNIEnv*,jclass){initialize();}
+extern "C" JNIEXPORT void JNICALL
+Java_com_florestaviva_game_MainActivity_nativeDebugCamera(JNIEnv*,jclass,jint scene){
+    // World-space viewpoints chosen for reproducible emulator screenshots.
+    const struct Preset {float x,z,yaw,pitch;} scenes[4]={
+        {0.f,0.f,.35f,-.08f}, {61.f,31.f,1.17f,-.04f},
+        {-109.f,76.f,2.38f,-.10f}, {142.f,-112.f,-.71f,-.06f}
+    };
+    const int s=std::clamp(int(scene),0,3);
+    game.x=scenes[s].x;game.z=scenes[s].z;
+    game.yaw=scenes[s].yaw;game.pitch=scenes[s].pitch;
+    game.feetOffset=0.f;game.verticalVelocity=0.f;
+    game.batchesDirty=true;
+    LOGE("CI_CAPTURE scene=%d x=%.1f z=%.1f yaw=%.2f",s,game.x,game.z,game.yaw);
+}
 static bool importScannedLOD(AAssetManager*manager,const char*filename,Mesh &target){
     AAsset* file=AAssetManager_open(manager,filename,AASSET_MODE_BUFFER);
     if(!file)return false;
