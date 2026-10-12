@@ -5,6 +5,8 @@ on:
     branches: [main, master, graphics3-atlas-vulkan-sky, graphics4-procedural-aaa-vegetation, graphics5-dense-vegetation-vulkan-compute, graphics6-shadows-material-rework]
   pull_request:
     branches: [main]
+permissions:
+  contents: write
 jobs:
   android:
     runs-on: ubuntu-latest
@@ -124,6 +126,18 @@ jobs:
           name: FlorestaViva-Graphics6-APK
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+      - name: Publicar APK direto em GitHub Releases
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp app/build/outputs/apk/debug/app-debug.apk FlorestaViva-Graphics6.apk
+          if ! gh release view graphics6 >/dev/null 2>&1; then
+            gh release create graphics6 --title 'Floresta Viva Graphics 6' --notes 'APK completo: materiais CC0 fotografados, sombras direcionais e vegetação procedural. Android arm64 e armeabi-v7a. Build de testes assinado com debug key.'
+          fi
+          gh release upload graphics6 FlorestaViva-Graphics6.apk --clobber
       - name: Publicar modelos 3D editáveis
         uses: actions/upload-artifact@v4
         with:
