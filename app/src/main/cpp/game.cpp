@@ -2,6 +2,7 @@
 #include <android/bitmap.h>
 #include <android/log.h>
 #include <GLES3/gl3.h>
+#include <vulkan/vulkan.h>
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -169,21 +170,35 @@ static ModelData makeBroadLeaves(){
     return m;
 }
 static ModelData makeLeafDetail(){
-    // Alpha-tested leaf cards interrupt the spherical silhouette of deciduous canopies.
+    // Botanical leaf cards share a single texture atlas instead of drawing huge
+    // translucent canopy billboards. Geometry is deterministic and instanced.
+    // Every leaf card maps to ONE 4x4 atlas cell with transparent borders.
     ModelData m;
     std::mt19937 rng(123984u);
     std::uniform_real_distribution<float> random(0.f,1.f);
-    for(int i=0;i<80;i++){
-        float a=random(rng)*2*PI;
-        float v=random(rng)*2.f-1.f;
-        float radial=std::sqrt(1.f-v*v);
-        float r=1.7f+random(rng)*.80f;
-        Vec3 center{std::cos(a)*radial*r,7.0f+v*1.65f,std::sin(a)*radial*r};
-        float sz=.45f+random(rng)*.66f;
-        Vec3 side{std::cos(a+PI*.5f)*sz,0,std::sin(a+PI*.5f)*sz};
-        Vec3 up{0,sz*1.3f,0};
-        m.quad(center-side,center+side,center+side+up,center-side+up,
-               normalize(cross(up,side)));
+    for(int i=0;i<110;i++){
+        float angle=random(rng)*2.f*PI;
+        float polar=random(rng)*2.f-1.f;
+        float radial=std::sqrt(std::max(0.f,1.f-polar*polar));
+        float radius=1.55f+random(rng)*1.12f;
+        Vec3 center{std::cos(angle)*radial*radius,7.0f+polar*1.75f,std::sin(angle)*radial*radius};
+        float scale=.32f+random(rng)*.42f;
+        Vec3 right{std::cos(angle+PI*.5f)*scale,0,std::sin(angle+PI*.5f)*scale};
+        Vec3 up{0,scale*1.35f,0};
+        // Angled leaflets are not uniformly vertical and have broken silhouettes.
+        up=up+Vec3{std::cos(angle)*scale*.35f,0,std::sin(angle)*scale*.35f};
+        Vec3 normal=normalize(cross(right,up));
+        int cell=int(random(rng)*15.999f);
+        float u0=(float(cell%4)+.025f)*.25f,u1=(float(cell%4)+.975f)*.25f;
+        float v0=(float(cell/4)+.025f)*.25f,v1=(float(cell/4)+.975f)*.25f;
+        Vec3 p0=center-right-up*.55f,p1=center+right-up*.55f;
+        Vec3 p2=center+right+up*.55f,p3=center-right+up*.55f;
+        uint32_t base=uint32_t(m.v.size());
+        m.v.push_back({p0.x,p0.y,p0.z,normal.x,normal.y,normal.z,u0,v1});
+        m.v.push_back({p1.x,p1.y,p1.z,normal.x,normal.y,normal.z,u1,v1});
+        m.v.push_back({p2.x,p2.y,p2.z,normal.x,normal.y,normal.z,u1,v0});
+        m.v.push_back({p3.x,p3.y,p3.z,normal.x,normal.y,normal.z,u0,v0});
+        m.triangle(base,base+1,base+2);m.triangle(base,base+2,base+3);
     }
     return m;
 }
@@ -286,8 +301,14 @@ out vec3 vN,vP;out vec2 vUV;out float vTint,vType;
 void main(){
     float ang=aMeta.x+uSpin,ca=cos(ang),sa=sin(ang);
     vec3 p=aPos*aInst.w;
-    if(uWind>0.0){float sway=sin(uTime*1.25+aInst.x*.12+aInst.z*.12+aPos.y*.38);
-        p.x+=uWind*sway*max(aPos.y,0.0)*.035;
+    if(uWind>0.0){
+        float phase=uTime*1.08+aInst.x*.13+aInst.z*.17;
+        float primary=sin(phase+aPos.y*.32);
+        float gust=sin(phase*.41+sin(aInst.z*.065))*.40;
+        float local=sin(uTime*2.45+aPos.x*1.9+aPos.z*1.6+aInst.y)*.18;
+        float force=(primary+gust+local)*uWind*max(aPos.y,0.0)*.032;
+        p.x+=force;
+        p.z+=force*.52;
     }
     vec3 r=vec3(p.x*ca-p.z*sa,p.y,p.x*sa+p.z*ca);
     vP=r+aInst.xyz;
@@ -317,6 +338,8 @@ void main(){
     vec4 s=texture(uTex,vUV);
     if(s.a<uCutout)discard;
     vec3 n=normalize(vN),V=normalize(uEye-vP),L=normalize(uSun);
+    // Alpha-tested foliage cards are rendered two-sided, including their lighting.
+    if(uFoliage>.5 && !gl_FrontFacing)n=-n;
     if(uBump>.01){
         vec3 q0=dFdx(vP),q1=dFdy(vP);
         vec2 st0=dFdx(vUV),st1=dFdy(vUV);
@@ -343,6 +366,56 @@ void main(){
     rgb=pow(rgb,vec3(.94));
     float fog=smoothstep(92.0,276.0,distance(uEye,vP));
     Frag=vec4(mix(rgb,uFog,fog),s.a);
+}
+)GLSL";
+static const char* SKY_VS=R"GLSL(#version 300 es
+precision highp float;
+void main(){
+    vec2 p=vec2(gl_VertexID==1?3.0:-1.0,gl_VertexID==2?3.0:-1.0);
+    gl_Position=vec4(p,0.0,1.0);
+}
+)GLSL";
+static const char* SKY_FS=R"GLSL(#version 300 es
+precision highp float;
+uniform vec2 uViewport,uCamera;
+uniform float uTime,uSunPower;
+uniform vec3 uSunDir,uHaze;
+out vec4 Frag;
+float hashSky(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+float noiseSky(vec2 p){
+    vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);
+    return mix(mix(hashSky(i),hashSky(i+vec2(1,0)),f.x),
+        mix(hashSky(i+vec2(0,1)),hashSky(i+vec2(1,1)),f.x),f.y);
+}
+void main(){
+    float aspect=uViewport.x/max(uViewport.y,1.0);
+    vec2 screen=(gl_FragCoord.xy/uViewport)*2.0-1.0;
+    float yaw=uCamera.x,pitch=uCamera.y;
+    vec3 fw=vec3(sin(yaw)*cos(pitch),sin(pitch),cos(yaw)*cos(pitch));
+    vec3 right=normalize(cross(fw,vec3(0,1,0)));
+    vec3 up=normalize(cross(right,fw));
+    float tanFov=.6745;
+    vec3 ray=normalize(fw+screen.x*aspect*tanFov*right+screen.y*tanFov*up);
+    float altitude=max(ray.y,0.0);
+    float horizon=pow(1.0-altitude,5.0);
+    vec3 zenith=mix(vec3(.085,.24,.45),vec3(.18,.39,.63),uSunPower);
+    vec3 sky=mix(zenith,mix(uHaze,vec3(.70,.77,.78),uSunPower*.40),horizon);
+    float cosSun=max(dot(ray,normalize(uSunDir)),0.0);
+    float mie=pow(cosSun,42.0)*.32+pow(cosSun,360.0)*.60;
+    sky+=vec3(1.0,.72,.38)*mie*uSunPower;
+    // Clouds are a thin moving layer with two procedural detail scales.
+    if(ray.y>.08){
+        vec2 cloudXY=ray.xz/max(ray.y,.09)*.64+vec2(uTime*.0035,uTime*.0007);
+        float broad=noiseSky(cloudXY);
+        float wisps=noiseSky(cloudXY*2.4+13.1);
+        float clouds=smoothstep(.53,.76,broad*.72+wisps*.28);
+        clouds*=smoothstep(.08,.20,ray.y)*.44;
+        sky=mix(sky,vec3(.93,.93,.90)*(.70+.3*uSunPower),clouds);
+    }
+    // Short broad solar halo and high-dynamic-range inspired sunlight.
+    float disk=smoothstep(.99935,.99978,cosSun)*uSunPower;
+    sky+=vec3(1.0,.83,.53)*disk*.95;
+    Frag=vec4(sky,1.0);
 }
 )GLSL";
 static const char* SHADOW_VS=R"GLSL(#version 300 es
@@ -412,8 +485,8 @@ struct Batches {
 struct Relic {float x,z;bool picked=false;};
 struct State {
     int width=1280,height=720;
-    GLuint terrainProg=0,instProg=0,shadowProg=0;
-    GLuint tex[11]{};
+    GLuint terrainProg=0,instProg=0,shadowProg=0,skyProg=0,skyVao=0;
+    GLuint tex[13]{};
     Mesh trunk,pineTrunk,leaves,leafDetail,pineLeaves,grass,shrub,rock,shadow,crystal;
     std::unordered_map<int64_t,ChunkData> chunks;
     Batches batches;
@@ -531,15 +604,15 @@ static void instDraw(const Mesh& mesh,const std::vector<Instance>& instances){
 static void material(int index,float cutout,float wind,float emissive=0.f,float spin=0.f){
     glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_2D,game.tex[index]);
     glUniform1i(glGetUniformLocation(game.instProg,"uTex"),0);
-    glActiveTexture(GL_TEXTURE1);glBindTexture(GL_TEXTURE_2D,game.tex[10]);
+    glActiveTexture(GL_TEXTURE1);glBindTexture(GL_TEXTURE_2D,game.tex[index==11?12:10]);
     glUniform1i(glGetUniformLocation(game.instProg,"uMaterialNormal"),1);
     set1(game.instProg,"uCutout",cutout);
     set1(game.instProg,"uWind",wind);
     set1(game.instProg,"uEmissive",emissive);
     set1(game.instProg,"uSpin",spin);
     set1(game.instProg,"uRoughness",index==3?.83f:.94f);
-    set1(game.instProg,"uBump",index==3?.63f:0.f);
-    set1(game.instProg,"uFoliage",(index==4||index==5||index==6)?1.f:0.f);
+    set1(game.instProg,"uBump",index==3?.63f:(index==11?.58f:0.f));
+    set1(game.instProg,"uFoliage",(index==4||index==5||index==6||index==11)?1.f:0.f);
 }
 static void update(float dt){
     dt=clampf(dt,0.f,.05f);game.t+=dt;
@@ -581,6 +654,19 @@ static void draw(float dt){
     float light=.59f+.41f*cycle;
     Vec3 fog={.56f+.16f*cycle,.65f+.17f*cycle,.68f+.20f*cycle};
     glClearColor(fog.x,fog.y,fog.z,1);glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+    // Atmospheric sky is a fullscreen triangle, NOT a flat static PNG background.
+    if(game.skyProg){
+        glDisable(GL_DEPTH_TEST);glDepthMask(GL_FALSE);
+        glUseProgram(game.skyProg);
+        glUniform2f(glGetUniformLocation(game.skyProg,"uViewport"),float(game.width),float(game.height));
+        glUniform2f(glGetUniformLocation(game.skyProg,"uCamera"),game.yaw,game.pitch);
+        glUniform1f(glGetUniformLocation(game.skyProg,"uTime"),game.t);
+        glUniform1f(glGetUniformLocation(game.skyProg,"uSunPower"),light);
+        set3(game.skyProg,"uSunDir",normalize({.62f,.87f,.33f}));
+        set3(game.skyProg,"uHaze",fog);
+        glBindVertexArray(game.skyVao);glDrawArrays(GL_TRIANGLES,0,3);glBindVertexArray(0);
+        glDepthMask(GL_TRUE);
+    }
     Vec3 eye{game.x,height(game.x,game.z)+1.72f,game.z};
     Vec3 dir{std::sin(game.yaw)*std::cos(game.pitch),std::sin(game.pitch),std::cos(game.yaw)*std::cos(game.pitch)};
     Mat4 view=lookAt(eye,eye+dir);
@@ -613,8 +699,21 @@ static void draw(float dt){
     material(3,0,0);instDraw(game.pineTrunk,game.batches.pine);
     material(4,0,.7f);instDraw(game.leaves,game.batches.broad);
     material(4,0,.55f);instDraw(game.pineLeaves,game.batches.pine);
-    material(6,.36f,.85f);instDraw(game.leafDetail,game.batches.broad);
-    material(5,.42f,.8f);instDraw(game.grass,game.batches.grass);
+    // High-detail leaf cards only for near deciduous trees: avoid distant alpha overdraw.
+    std::vector<Instance> closeBroad;
+    closeBroad.reserve(game.batches.broad.size());
+    for(const auto& t:game.batches.broad){
+        float dx=t.x-game.x,dz=t.z-game.z;
+        if(dx*dx+dz*dz<85.f*85.f)closeBroad.push_back(t);
+    }
+    material(11,.42f,.85f);instDraw(game.leafDetail,closeBroad);
+    // Distance cull ground cards; their alpha edges dominate fragment cost on Mali.
+    std::vector<Instance> closeGrass;closeGrass.reserve(game.batches.grass.size());
+    for(const auto& t:game.batches.grass){
+        float dx=t.x-game.x,dz=t.z-game.z;
+        if(dx*dx+dz*dz<75.f*75.f)closeGrass.push_back(t);
+    }
+    material(5,.42f,.8f);instDraw(game.grass,closeGrass);
     material(6,.36f,.5f);instDraw(game.shrub,game.batches.shrub);
     material(1,0,0);instDraw(game.rock,game.batches.stones);
     if(game.collected<RELIC_COUNT){
@@ -634,6 +733,8 @@ static void initialize(){
     game.terrainProg=program(TERRAIN_VS,TERRAIN_FS);
     game.instProg=program(INST_VS,INST_FS);
     game.shadowProg=program(SHADOW_VS,SHADOW_FS);
+    game.skyProg=program(SKY_VS,SKY_FS);
+    if(game.skyProg)glGenVertexArrays(1,&game.skyVao);
     if(!game.terrainProg||!game.instProg||!game.shadowProg){LOGE("GLES shader initialization failed");return;}
     glGenBuffers(1,&instanceBuffer);
     game.trunk=makeMesh(makeTrunk(false));game.pineTrunk=makeMesh(makeTrunk(true));
@@ -650,13 +751,43 @@ static void initialize(){
 }
 extern "C" JNIEXPORT void JNICALL
 Java_com_florestaviva_game_MainActivity_nativeCreate(JNIEnv*,jclass){initialize();}
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_florestaviva_game_MainActivity_nativeVulkanInfo(JNIEnv*env,jclass){
+    // Runtime Vulkan capability check. The playable forest currently retains
+    // its proven OpenGL ES renderer; no false claim of a Vulkan forest backend.
+    VkApplicationInfo appInfo{};
+    appInfo.sType=VK_STRUCTURE_TYPE_APPLICATION_INFO;
+    appInfo.pApplicationName="FlorestaViva";
+    appInfo.apiVersion=VK_API_VERSION_1_0;
+    VkInstanceCreateInfo ci{};
+    ci.sType=VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+    ci.pApplicationInfo=&appInfo;
+    VkInstance instance=VK_NULL_HANDLE;
+    if(vkCreateInstance(&ci,nullptr,&instance)!=VK_SUCCESS)
+        return env->NewStringUTF("Vulkan indisponivel; OpenGL ES 3 ativo");
+    uint32_t count=0;
+    if(vkEnumeratePhysicalDevices(instance,&count,nullptr)!=VK_SUCCESS||count==0){
+        vkDestroyInstance(instance,nullptr);
+        return env->NewStringUTF("Sem GPU Vulkan; OpenGL ES 3 ativo");
+    }
+    std::vector<VkPhysicalDevice> devices(count);
+    vkEnumeratePhysicalDevices(instance,&count,devices.data());
+    VkPhysicalDeviceProperties props{};
+    vkGetPhysicalDeviceProperties(devices[0],&props);
+    char name[220]{};
+    std::snprintf(name,sizeof(name),"Vulkan disponivel: %.130s (API %u.%u). Renderer atual: GLES3.",
+                  props.deviceName,VK_VERSION_MAJOR(props.apiVersion),VK_VERSION_MINOR(props.apiVersion));
+    vkDestroyInstance(instance,nullptr);
+    return env->NewStringUTF(name);
+}
+
 extern "C" JNIEXPORT void JNICALL
 Java_com_florestaviva_game_MainActivity_nativeResize(JNIEnv*,jclass,jint w,jint h){
     game.width=std::max(int(w),1);game.height=std::max(int(h),1);
 }
 extern "C" JNIEXPORT void JNICALL
 Java_com_florestaviva_game_MainActivity_nativeUploadTexture(JNIEnv*env,jclass,jint index,jobject bitmap){
-    if(index<0||index>=11||!bitmap||!game.ready)return;
+    if(index<0||index>=13||!bitmap||!game.ready)return;
     AndroidBitmapInfo info{};
     if(AndroidBitmap_getInfo(env,bitmap,&info)!=ANDROID_BITMAP_RESULT_SUCCESS || info.format!=ANDROID_BITMAP_FORMAT_RGBA_8888)return;
     void* pixels=nullptr;

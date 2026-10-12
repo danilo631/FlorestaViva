@@ -8,6 +8,7 @@ target_compile_options(florestaviva PRIVATE -Wall -Wextra -O3)
 find_library(gles-lib GLESv3 REQUIRED)
 find_library(android-lib android REQUIRED)
 find_library(jnigraphics-lib jnigraphics REQUIRED)
+find_library(vulkan-lib vulkan REQUIRED)
 find_library(log-lib log REQUIRED)
 
 # AndroidBitmap_getInfo/lockPixels/unlockPixels live in libjnigraphics.
@@ -18,4 +19,5 @@ target_link_libraries(florestaviva
     ${android-lib}
     ${jnigraphics-lib}
     ${log-lib}
+    ${vulkan-lib}
 )

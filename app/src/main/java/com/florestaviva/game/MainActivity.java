@@ -25,6 +25,7 @@ public class MainActivity extends Activity {
     static { System.loadLibrary("florestaviva"); }
 
     public static native void nativeCreate();
+    public static native String nativeVulkanInfo();
     public static native void nativeResize(int width, int height);
     public static native void nativeUploadTexture(int index, Bitmap bitmap);
     public static native void nativeInput(float sideways, float forward, float lookX, float lookY,
@@ -50,6 +51,7 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         fullscreen();
+        android.util.Log.i("FlorestaViva",nativeVulkanInfo());
 
         surface = new GLSurfaceView(this);
         surface.setEGLContextClientVersion(3);
@@ -107,7 +109,8 @@ public class MainActivity extends Activity {
             if(saved!=null)nativeLoad(saved);
             String[] files = {"grass.png","soil.png","moss.png","bark.png",
                     "canopy.png","blades.png","bush.png",
-                    "grass_normal.png","soil_normal.png","moss_normal.png","bark_normal.png"};
+                    "grass_normal.png","soil_normal.png","moss_normal.png","bark_normal.png",
+                    "leaves_atlas.png","leaves_normal.png"};
             BitmapFactory.Options opts = new BitmapFactory.Options();
             opts.inScaled = false;
             opts.inPreferredConfig = Bitmap.Config.ARGB_8888;
