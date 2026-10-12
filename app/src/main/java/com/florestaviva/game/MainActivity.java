@@ -110,7 +110,10 @@ public class MainActivity extends Activity {
             String[] files = {"grass.png","soil.png","moss.png","bark.png",
                     "canopy.png","blades.png","bush.png",
                     "grass_normal.png","soil_normal.png","moss_normal.png","bark_normal.png",
-                    "leaves_atlas.png","leaves_normal.png"};
+                    "leaves_atlas.png","leaves_normal.png",
+                    "pine_atlas.png","pine_normal.png",
+                    "pine_bark.png","pine_bark_normal.png",
+                    "rock.png","rock_normal.png"};
             BitmapFactory.Options opts = new BitmapFactory.Options();
             opts.inScaled = false;
             opts.inPreferredConfig = Bitmap.Config.ARGB_8888;
