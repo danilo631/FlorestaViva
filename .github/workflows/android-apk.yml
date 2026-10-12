@@ -131,10 +131,36 @@ jobs:
           manifest=json.loads((a/'polyhaven_api_manifest.json').read_text())
           assert manifest['license']=='CC0' and len(manifest['files'])==3
           PY
+      - name: Fase 1: obter e validar material PBR 1K CC0 por checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tools/fetch_assets.py --manifest assets_manifest.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from PIL import Image
+          root=Path("app/src/main/assets")
+          manifest=json.loads(Path("assets_manifest.json").read_text())
+          output=json.loads((root/"assets_provenance.json").read_text())
+          assert len(output["sources"])==len(manifest["texture_sets"])==9
+          for asset in manifest["texture_sets"]:
+              role=asset["role"]
+              for suffix in ("",".png"):
+                  pass
+              for key in (".png","_normal.png","_rough.png"):
+                  with Image.open(root/(role+key)) as img:
+                      assert img.size==(1024,1024), (role,key,img.size)
+              with Image.open(root/(role+"_rough.png")) as packed:
+                  from PIL import ImageStat
+                  vals=ImageStat.Stat(packed).mean
+                  assert 0<vals[0]<255 and 0<vals[1]<255 and vals[2]<.01,vals
+          print("9 validated CC0 scanned PBR families + packed ORM; source checksums recorded")
+          PY
       - name: Preparar prévia dos materiais fotografados
         run: |
           python tools/material_preview.py
-          cp build/Graphics7_Materials_Preview.jpg build/Graphics11_Materials_Preview.jpg
+          cp build/Graphics7_Materials_Preview.jpg build/Graphics12_Materials_Preview.jpg
       - name: Compilar shaders Vulkan de teste
         shell: bash
         run: |
@@ -170,13 +196,15 @@ jobs:
           java=Path('app/src/main/java/com/florestaviva/game/MainActivity.java').read_text()
           group=java.split('String[] files = {',1)[1].split('};',1)[0]
           entries=re.findall(r'"([^"]*)"',group)
-          assert len(entries)==33,entries
+          assert len(entries)==39,entries
           assert entries[19:21] == ['foliage_color.png','foliage_normal.png'],entries
           assert entries[21:25] == ['grass_rough.png','soil_rough.png',
                                    'bark_rough.png','pine_bark_rough.png'],entries
           assert entries[25:30] == ['river_normal.png','riverbed.png',
                                   'wildlife_fur.png','wildlife_fur_normal.png','wildflowers.png'],entries
-          assert entries[30:] == ['riverbed_normal.png','rock_rough.png','moss_rough.png'],entries
+          assert entries[30:] == ['riverbed_normal.png','rock_rough.png','moss_rough.png',
+                                 'bark_platanus.png','bark_platanus_normal.png','bark_platanus_rough.png',
+                                 'bark_willow.png','bark_willow_normal.png','bark_willow_rough.png'],entries
           asset=Path('app/src/main/assets')
           for filename in entries:
               if filename: assert (asset/filename).exists(),filename
@@ -221,7 +249,7 @@ jobs:
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: FlorestaViva-Graphics11-APK
+          name: FlorestaViva-Graphics12-APK
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
       - name: Publicar APK direto em GitHub Releases
@@ -231,16 +259,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cp app/build/outputs/apk/debug/app-debug.apk FlorestaViva-Graphics11.apk
-          if ! gh release view graphics11 >/dev/null 2>&1; then
-            gh release create graphics11 --title 'Floresta Viva Graphics 11' --notes 'Graphics 11: animação local por pivôs em folhas e sombras, fauna por estados, coleta de madeira/pedra/ervas, energia/hidratação, API Poly Haven e engine Android atualizada. Inclui fauna, biomas, missoes e salto. APK com assets embutidos, exclusivo Android ARM64. Assinado com chave debug temporaria: a atualizacao sobre uma versao anterior pode exigir desinstalacao, apagando o progresso.'
+          cp app/build/outputs/apk/debug/app-debug.apk FlorestaViva-Graphics12.apk
+          if ! gh release view graphics12 >/dev/null 2>&1; then
+            gh release create graphics12 --title 'Floresta Viva Graphics 12' --notes 'Graphics 12: animação local por pivôs em folhas e sombras, fauna por estados, coleta de madeira/pedra/ervas, energia/hidratação, API Poly Haven e engine Android atualizada. Inclui fauna, biomas, missoes e salto. APK com assets embutidos, exclusivo Android ARM64. Assinado com chave debug temporaria: a atualizacao sobre uma versao anterior pode exigir desinstalacao, apagando o progresso.'
           fi
-          gh release upload graphics11 FlorestaViva-Graphics11.apk --clobber
+          gh release upload graphics12 FlorestaViva-Graphics12.apk --clobber
       - name: Publicar comparação dos materiais
         uses: actions/upload-artifact@v4
         with:
-          name: FlorestaViva-Graphics11-Material-Preview
-          path: build/Graphics11_Materials_Preview.jpg
+          name: FlorestaViva-Graphics12-Material-Preview
+          path: build/Graphics12_Materials_Preview.jpg
           if-no-files-found: error
       - name: Publicar modelos 3D editáveis
         uses: actions/upload-artifact@v4

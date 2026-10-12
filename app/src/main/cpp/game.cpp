@@ -260,9 +260,12 @@ void main(){
     vec3 n=normalize(N+vec3(mapXY.x*.72,0.0,mapXY.y*.72));
     float diffuse=max(dot(n,L),0.0);
     float wet=clamp(moss*.4+dirt*.22,0.0,.34);
-    float measuredRough=mix(texture(uGrassRough,guv).r,
-        texture(uDirtRough,duv).r,dirt);
-    float photographedMossRough=texture(uMossRough,muv).r;
+    float measuredRough=mix(texture(uGrassRough,guv).g,
+        texture(uDirtRough,duv).g,dirt);
+    float photographedMossRough=texture(uMossRough,muv).g;
+    float photoOcclusion=mix(texture(uGrassRough,guv).r,
+                            texture(uMossRough,muv).r,moss);
+    photoOcclusion=mix(photoOcclusion,texture(uDirtRough,duv).r,dirt);
     float roughness=clamp(mix(measuredRough,photographedMossRough,moss*.84)-wet*.11,.34,.97);
     roughness=mix(roughness,.67,wetShore*.82);
     float highlight=ggxSpec(n,V,L,roughness)*diffuse*.30;
@@ -274,6 +277,7 @@ void main(){
     vec3 rgb=albedo*(ambientHemisphere+.79*diffuse*uLight*(.23+.77*sunVisibility))+
              vec3(highlight*uLight*sunVisibility);
     rgb*=mix(.87,1.09,noise2(vP.xz*.013+vec2(6.1,12.4)));
+    rgb*=mix(.72,1.,photoOcclusion);
     rgb*=1.0-.12*smoothstep(.12,.7,slope);
     // Filmic, channel-wise highlight compression instead of harsh clip.
     rgb=(rgb*(2.51*rgb+.03))/(rgb*(2.43*rgb+.59)+.14);
@@ -434,8 +438,9 @@ void main(){
                            mix(.62,1.0,visibility)*(1.0-thickness*.44);
         rgb+=s.rgb*vec3(.42,.71,.26)*transmitted;
     }else{
-        float rough=(uUseRoughnessMap>.5)?
-            clamp(texture(uMaterialRough,uv).r,.28,.98):uRoughness;
+        vec3 orm=texture(uMaterialRough,uv).rgb;
+        float rough=(uUseRoughnessMap>.5)?clamp(orm.g,.28,.98):uRoughness;
+        if(uUseRoughnessMap>.5)rgb*=mix(.72,1.,orm.r);
         rgb+=vec3(specGGX(n,V,L,rough)*max(nl,0.0)*uLight*.46);
     }
     if(uLeafLitter>.5){
@@ -727,8 +732,8 @@ struct State {
     int depthMapSize=0;
     bool treeDepthReady=false;
     Mat4 sunShadowMatrix{};
-    GLuint tex[33]{};
-    uint64_t texBytes[33]{};
+    GLuint tex[39]{};
+    uint64_t texBytes[39]{};
     GLuint riverProg=0;
     Mesh wildlifeMeshes[3],reedsMesh,flowersMesh;
     std::vector<ForestAnimal> wildlife;
@@ -972,7 +977,7 @@ static void material(int index,float cutout,float wind,float emissive=0.f,float 
     glUniform1i(glGetUniformLocation(game.instProg,"uTex"),0);
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D,game.tex[layer>=0?20:
-        (index==27?28:(index==15?16:(index==17?18:10)))]);
+        (index==33?34:(index==36?37:(index==27?28:(index==15?16:(index==17?18:10)))))]);
     glUniform1i(glGetUniformLocation(game.instProg,"uMaterialNormal"),1);
     if(layer>=0){
         float x=(layer%2)*.5f,y=(layer/2)*.5f;
@@ -982,7 +987,7 @@ static void material(int index,float cutout,float wind,float emissive=0.f,float 
     }else{
         glUniform4f(glGetUniformLocation(game.instProg,"uAtlasRect"),0.f,0.f,1.f,1.f);
     }
-    const int roughSlot=index==3?23:(index==15?24:(index==17?31:-1));
+    const int roughSlot=index==3?23:(index==15?24:(index==17?31:(index==33?35:(index==36?38:-1))));
     glActiveTexture(GL_TEXTURE5);
     glBindTexture(GL_TEXTURE_2D,game.tex[roughSlot>=0?roughSlot:23]);
     glUniform1i(glGetUniformLocation(game.instProg,"uMaterialRough"),5);
@@ -991,8 +996,8 @@ static void material(int index,float cutout,float wind,float emissive=0.f,float 
     set1(game.instProg,"uWind",wind);
     set1(game.instProg,"uEmissive",emissive);
     set1(game.instProg,"uSpin",spin);
-    set1(game.instProg,"uRoughness",(index==3||index==15)?.83f:(index==17?.72f:.94f));
-    set1(game.instProg,"uBump",(index==3||index==15)?.63f:
+    set1(game.instProg,"uRoughness",(index==3||index==15||index==33||index==36)?.83f:(index==17?.72f:.94f));
+    set1(game.instProg,"uBump",(index==3||index==15||index==33||index==36)?.63f:
           (index==17?.42f:((index==11||index==13||index==5||index==6)?.64f:
                             (index==27?.30f:0.f))));
     set1(game.instProg,"uFoliage",(index==4||index==5||index==6||index==11||index==13)?1.f:0.f);
@@ -1001,7 +1006,7 @@ static void material(int index,float cutout,float wind,float emissive=0.f,float 
     set1(game.instProg,"uInteractiveVegetation",0.f);
     set1(game.instProg,"uAnimalGait",index==27?1.f:0.f);
     set1(game.instProg,"uPivotWind",(index==11||index==13)?.105f:
-                                      ((index==3||index==15)?.040f:0.f));
+                                      ((index==3||index==15||index==33||index==36)?.040f:0.f));
 }
 static void simulateWildlife(float dt){
     // Deterministic population around the moving player; persistent agents
@@ -1422,7 +1427,8 @@ static void draw(float dt){
     for(const auto& t:game.batches.pine)assignTree(t,true);
 
     for(int s=0;s<5;s++){
-        material(s>=3?15:3,0.f,0.f);
+        // 3 photographed tree bark species on the 3 broadleaf models.
+        material(s>=3?15:(s==0?3:(s==1?33:36)),0.f,0.f);
         instDraw(game.woodHi[s],nearTrees[s]);
         instDraw(game.woodMid[s],midTrees[s]);
         instDraw(game.woodMid[s],farTrees[s]);
@@ -1602,6 +1608,9 @@ static void draw(float dt){
 static void initialize(){
     // Called with a current, potentially new, GLES context.
     game.chunks.clear();game.batches.clear();game.batchesDirty=true;
+    game.texBytes[0]=0;
+    std::fill(std::begin(game.texBytes),std::end(game.texBytes),0u);
+    debugMetrics.textureBytes=0;
     game.ready=false;
     game.wildlife.clear();
     game.terrainProg=program(TERRAIN_VS,TERRAIN_FS);
@@ -1727,7 +1736,7 @@ Java_com_florestaviva_game_MainActivity_nativeResize(JNIEnv*,jclass,jint w,jint 
 }
 extern "C" JNIEXPORT void JNICALL
 Java_com_florestaviva_game_MainActivity_nativeUploadTexture(JNIEnv*env,jclass,jint index,jobject bitmap){
-    if(index<0||index>=33||!bitmap||!game.ready)return;
+    if(index<0||index>=39||!bitmap||!game.ready)return;
     AndroidBitmapInfo info{};
     if(AndroidBitmap_getInfo(env,bitmap,&info)!=ANDROID_BITMAP_RESULT_SUCCESS || info.format!=ANDROID_BITMAP_FORMAT_RGBA_8888)return;
     void* pixels=nullptr;
