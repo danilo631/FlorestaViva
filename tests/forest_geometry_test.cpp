@@ -3,6 +3,12 @@
 #include <cmath>
 #include <cstdint>
 #include <iostream>
+#include <filesystem>
+#include <fstream>
+#include <iomanip>
+#include <stdexcept>
+#include <cstdlib>
+#include <string>
 #include <random>
 #include <vector>
 constexpr float PI=3.14159265358979323846f;
@@ -48,8 +54,65 @@ void check(const ModelData& m,const char* name){
             throw std::runtime_error(std::string(name)+" UV out of expected bounds");
     }
 }
+
+namespace fs=std::filesystem;
+static void exportPart(std::ofstream& out,const ModelData& model,
+                       const char* group,const char* mat,size_t& base){
+    out<<"g "<<group<<"\nusemtl "<<mat<<"\n";
+    for(auto v:model.v)out<<"v "<<v.x<<" "<<v.y<<" "<<v.z<<"\n";
+    for(auto v:model.v)out<<"vt "<<v.u<<" "<<v.v<<"\n";
+    for(auto v:model.v)out<<"vn "<<v.nx<<" "<<v.ny<<" "<<v.nz<<"\n";
+    for(size_t i=0;i<model.i.size();i+=3){
+        out<<"f ";
+        for(int j=0;j<3;j++){
+            auto index=base+model.i[i+j]+1;
+            out<<index<<"/"<<index<<"/"<<index<<(j==2?"\n":" ");
+        }
+    }
+    base+=model.v.size();
+}
+static void exportLod(const fs::path& directory,const ForestTreeMesh& model,
+                      int species,int lod){
+    bool pine=species>=3;
+    const char* family=pine?"conifer":"broadleaf";
+    fs::path file=directory/(std::string(family)+"_"+std::to_string(species)+
+                              "_LOD"+std::to_string(lod)+".obj");
+    std::ofstream o(file);
+    o<<std::fixed<<std::setprecision(6);
+    o<<"# Floresta Viva: polygon mesh generated at build time.\n";
+    o<<"# LOD0: branch skeleton + individual cards; LOD1: lower detail;"
+        " LOD2: distant canopy.\n";
+    o<<"mtllib forest_materials.mtl\n";
+    size_t base=0;
+    exportPart(o,lod==0?model.woodHigh:model.woodMid,"woody_skeleton",
+               pine?"pine_bark":"broadleaf_bark",base);
+    exportPart(o,lod==0?model.foliageHigh:(lod==1?model.foliageMid:model.foliageFar),
+               "separate_leaf_geometry",
+               lod==2?"distant_canopy":(pine?"conifer_needles":"broadleaf_leaves"),
+               base);
+    if(!o)throw std::runtime_error("OBJ export failed");
+}
+static void exportMaterials(const fs::path& dir){
+    std::ofstream m(dir/"forest_materials.mtl");
+    auto material=[&](const char* name,const char* color,const char* normal,bool alpha){
+        m<<"newmtl "<<name<<"\nKd 1 1 1\nKs .04 .04 .04\nNs 20\n";
+        m<<"map_Kd "<<color<<"\n";
+        if(alpha)m<<"map_d "<<color<<"\n";
+        if(normal[0])m<<"bump "<<normal<<"\n";
+        m<<"\n";
+    };
+    material("pine_bark","pine_bark.png","pine_bark_normal.png",false);
+    material("broadleaf_bark","bark.png","bark_normal.png",false);
+    material("conifer_needles","pine_atlas.png","pine_normal.png",true);
+    material("broadleaf_leaves","leaves_atlas.png","leaves_normal.png",true);
+    material("distant_canopy","canopy.png","",false);
+}
+
 int main(){
     try{
+        const char* exportDir=std::getenv("FOREST_EXPORT_DIR");
+        const fs::path output=exportDir?fs::path(exportDir):fs::path();
+        if(exportDir){fs::create_directories(output);exportMaterials(output);}
         size_t total=0;
         for(int i=0;i<5;i++){
             auto tree=forestBuildTree(i);
@@ -62,6 +125,9 @@ int main(){
                 throw std::runtime_error("wood LOD not simplified");
             if(tree.foliageHigh.i.size()<=tree.foliageMid.i.size())
                 throw std::runtime_error("leaf LOD not simplified");
+            if(exportDir){
+                for(int lod=0;lod<3;lod++)exportLod(output,tree,i,lod);
+            }
             size_t triangles=(tree.woodHigh.i.size()+tree.foliageHigh.i.size())/3;
             total+=triangles;
             std::cout<<"species="<<i<<" wood="<<tree.woodHigh.i.size()/3
