@@ -1481,8 +1481,9 @@ Java_com_florestaviva_game_MainActivity_nativeSave(JNIEnv*env,jclass){
     unsigned mask=0;
     for(int i=0;i<RELIC_COUNT;i++)if(game.relics[i].picked)mask|=1u<<i;
     char save[180];
-    std::snprintf(save,sizeof(save),"%.3f %.3f %.4f %.4f %.3f %u",
-                  game.x,game.z,game.yaw,game.pitch,game.t,mask);
+    std::snprintf(save,sizeof(save),"%.3f %.3f %.4f %.4f %.3f %u %u %u %d",
+                  game.x,game.z,game.yaw,game.pitch,game.t,mask,
+                  game.reachedRiver?1u:0u,game.seenSpecies,game.jumps);
     return env->NewStringUTF(save);
 }
 extern "C" JNIEXPORT void JNICALL
@@ -1490,14 +1491,21 @@ Java_com_florestaviva_game_MainActivity_nativeLoad(JNIEnv*env,jclass,jstring sav
     if(!save)return;
     const char* raw=env->GetStringUTFChars(save,nullptr);
     if(!raw)return;
-    float x,z,yaw,pitch,t;unsigned mask;
-    int got=std::sscanf(raw,"%f %f %f %f %f %u",&x,&z,&yaw,&pitch,&t,&mask);
+    float x,z,yaw,pitch,t;
+    unsigned mask=0,river=0,seen=0;
+    int jumps=0;
+    int got=std::sscanf(raw,"%f %f %f %f %f %u %u %u %d",
+           &x,&z,&yaw,&pitch,&t,&mask,&river,&seen,&jumps);
     env->ReleaseStringUTFChars(save,raw);
-    if(got!=6 || !std::isfinite(x)||!std::isfinite(z)||!std::isfinite(yaw)
+    if(got<6 || !std::isfinite(x)||!std::isfinite(z)||!std::isfinite(yaw)
        ||!std::isfinite(pitch)||!std::isfinite(t)||std::fabs(x)>WORLD_HALF-8
        ||std::fabs(z)>WORLD_HALF-8 || t<0)return;
     game.x=x;game.z=z;game.yaw=yaw;game.pitch=clampf(pitch,-1.35f,1.35f);
     game.t=t;game.collected=0;
+    // Six-field Graphics 7 saves still load without losing collected relics.
+    game.reachedRiver=(got>=7 && river!=0);
+    game.seenSpecies=(got>=8 ? seen&7u : 0u);
+    game.jumps=(got>=9 ? std::max(0,std::min(999,jumps)) : 0);
     for(int i=0;i<RELIC_COUNT;i++){
         game.relics[i].picked=(mask&(1u<<i))!=0;
         if(game.relics[i].picked)game.collected++;
