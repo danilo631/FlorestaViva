@@ -81,8 +81,8 @@ def ingest(slug,source_root):
 
 def write_lod(model,path,triangles,span):
     target=min(int(triangles),len(model.faces))
-    if target<max(30,len(model.faces)//100):
-        raise ValueError("unreasonable target")
+    if target<90:
+        raise ValueError("LOD too small for safe scanned mesh")
     if len(model.faces)>target:
         mesh=model.simplify_quadric_decimation(face_count=target)
     else:mesh=model.copy()
@@ -97,7 +97,16 @@ def write_lod(model,path,triangles,span):
     points=(points-np.array([(points[:,0].min()+points[:,0].max())*.5,
                             points[:,1].min(),
                             (points[:,2].min()+points[:,2].max())*.5]))*factor
-    normals=np.asarray(mesh.vertex_normals,dtype=np.float64)
+    # Recompute area-weighted vertex normals with NumPy, avoiding SciPy
+    # dependency and ensuring normals survive mesh simplification.
+    face=np.asarray(mesh.faces,dtype=np.int64)
+    v0,v1,v2=points[face[:,0]],points[face[:,1]],points[face[:,2]]
+    faceNormals=np.cross(v1-v0,v2-v0)
+    normals=np.zeros_like(points)
+    for c in range(3):
+        np.add.at(normals,face[:,c],faceNormals)
+    magnitude=np.linalg.norm(normals,axis=1)
+    normals/=np.maximum(magnitude[:,None],1e-8)
     if normals.shape!=points.shape:raise RuntimeError("Missing vertex normals")
     tex=np.zeros((len(points),2),dtype=np.float64)
     try:
