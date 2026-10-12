@@ -167,6 +167,7 @@ void main(){vP=aPos;vN=aNormal;vUV=aUV;gl_Position=uVP*vec4(aPos,1.0);}
 )GLSL";
 static const char* TERRAIN_FS=R"GLSL(#version 300 es
 precision highp float;
+precision highp sampler2DShadow;
 in vec3 vP;in vec3 vN;in vec2 vUV;
 uniform sampler2D uGrass,uDirt,uMoss,uGrassNormal,uDirtNormal,uMossNormal;
 uniform vec3 uEye,uFog,uSun;
@@ -270,6 +271,7 @@ void main(){
 )GLSL";
 static const char* INST_FS=R"GLSL(#version 300 es
 precision highp float;
+precision highp sampler2DShadow;
 in vec3 vN,vP;in vec2 vUV;in float vTint,vType;
 uniform sampler2D uTex,uMaterialNormal;
 uniform vec4 uAtlasRect;
