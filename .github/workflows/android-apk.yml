@@ -131,7 +131,7 @@ jobs:
           manifest=json.loads((a/'polyhaven_api_manifest.json').read_text())
           assert manifest['license']=='CC0' and len(manifest['files'])==3
           PY
-      - name: Fase 1: obter e validar material PBR 1K CC0 por checksum
+      - name: 'Fase 1 - obter e validar material PBR 1K CC0 por checksum'
         shell: bash
         run: |
           set -euo pipefail
@@ -146,8 +146,6 @@ jobs:
           assert len(output["sources"])==len(manifest["texture_sets"])==9
           for asset in manifest["texture_sets"]:
               role=asset["role"]
-              for suffix in ("",".png"):
-                  pass
               for key in (".png","_normal.png","_rough.png"):
                   with Image.open(root/(role+key)) as img:
                       assert img.size==(1024,1024), (role,key,img.size)
