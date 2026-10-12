@@ -75,6 +75,8 @@ jobs:
           set -euo pipefail
           python tools/photogrammetry_materials.py --strict
           cat app/src/main/assets/photogrammetry_manifest.txt
+      - name: Preparar prévia dos materiais fotografados
+        run: python tools/material_preview.py
       - name: Compilar shaders Vulkan de teste
         shell: bash
         run: |
@@ -147,6 +149,12 @@ jobs:
             gh release create graphics7 --title 'Floresta Viva Graphics 7' --notes 'APK completo: materiais CC0 fotografados, sombras direcionais e vegetação procedural. Android arm64 e armeabi-v7a. Build de testes assinado com debug key.'
           fi
           gh release upload graphics7 FlorestaViva-Graphics7.apk --clobber
+      - name: Publicar comparação dos materiais
+        uses: actions/upload-artifact@v4
+        with:
+          name: FlorestaViva-Graphics7-Material-Preview
+          path: build/Graphics7_Materials_Preview.jpg
+          if-no-files-found: error
       - name: Publicar modelos 3D editáveis
         uses: actions/upload-artifact@v4
         with:
