@@ -504,6 +504,7 @@ struct State {
     float x=0,z=0,yaw=.35f,pitch=-.06f,t=0;
     float moveX=0,moveZ=0,lookX=0,lookY=0;
     bool running=false,collect=false;
+    int graphicsQuality=1;  // 0 ECO, 1 ALTA, 2 ULTRA
     std::array<Relic,RELIC_COUNT> relics{{{38,36},{-96,72},{149,-119},{-200,-176},{299,193},{-370,308}}};
     int collected=0;
     bool ready=false;
@@ -713,6 +714,11 @@ static void draw(float dt){
     glDisable(GL_BLEND);
     common(game.instProg,vp,eye,fog,light);
     set1(game.instProg,"uTime",game.t);
+    // Quality profiles change both triangle counts and alpha-fragment pressure.
+    const float nearMeters=game.graphicsQuality==0?32.f:(game.graphicsQuality==2?74.f:52.f);
+    const float midMeters=game.graphicsQuality==0?88.f:(game.graphicsQuality==2?155.f:118.f);
+    const float grassMeters=game.graphicsQuality==0?42.f:(game.graphicsQuality==2?107.f:75.f);
+    const float maxMeters=game.graphicsQuality==0?176.f:(game.graphicsQuality==2?250.f:242.f);
     // Tree instancing with separate species meshes and three geometry LODs.
     // Near: complete branched wood and modelled leaf sprigs.
     // Mid: reduced branches/cards. Far: coarse silhouette (no alpha-test forest).
@@ -720,14 +726,14 @@ static void draw(float dt){
     const float forwardX=std::sin(game.yaw),forwardZ=std::cos(game.yaw);
     auto assignTree=[&](const Instance& t,bool pine){
         const float dx=t.x-game.x,dz=t.z-game.z,d2=dx*dx+dz*dz;
-        if(d2>242.f*242.f)return;
+        if(d2>maxMeters*maxMeters)return;
         const float distance=std::sqrt(d2);
         if(dx*forwardX+dz*forwardZ < -distance*.52f-12.f)return;
         const int species=pine?
             3+std::min(1,int(t.tint*2.f)):
             std::min(2,int(t.tint*3.f));
-        if(d2<52.f*52.f)nearTrees[species].push_back(t);
-        else if(d2<118.f*118.f)midTrees[species].push_back(t);
+        if(d2<nearMeters*nearMeters)nearTrees[species].push_back(t);
+        else if(d2<midMeters*midMeters)midTrees[species].push_back(t);
         else farTrees[species].push_back(t);
     };
     for(const auto& t:game.batches.broad)assignTree(t,false);
@@ -751,7 +757,7 @@ static void draw(float dt){
     std::vector<Instance> closeGrass;closeGrass.reserve(game.batches.grass.size());
     for(const auto& t:game.batches.grass){
         float dx=t.x-game.x,dz=t.z-game.z;
-        if(dx*dx+dz*dz<75.f*75.f)closeGrass.push_back(t);
+        if(dx*dx+dz*dz<grassMeters*grassMeters)closeGrass.push_back(t);
     }
     material(5,.42f,.8f);instDraw(game.grass,closeGrass);
     material(6,.36f,.5f);instDraw(game.shrub,game.batches.shrub);
@@ -799,6 +805,10 @@ static void initialize(){
 }
 extern "C" JNIEXPORT void JNICALL
 Java_com_florestaviva_game_MainActivity_nativeCreate(JNIEnv*,jclass){initialize();}
+extern "C" JNIEXPORT void JNICALL
+Java_com_florestaviva_game_MainActivity_nativeSetGraphicsQuality(JNIEnv*,jclass,jint value){
+    game.graphicsQuality=std::max(0,std::min(2,int(value)));
+}
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_florestaviva_game_MainActivity_nativeVulkanInfo(JNIEnv*env,jclass){
     // Runtime Vulkan capability check. The playable forest currently retains
