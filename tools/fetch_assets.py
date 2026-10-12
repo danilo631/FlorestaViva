@@ -103,6 +103,12 @@ def decode_and_verify(entry,asset,kind):
     digest=hashlib.md5(body).hexdigest()
     if digest.lower()!=expected.lower():
         raise RuntimeError(f"Checksum mismatch for {asset['id']}/{kind} expected {expected} got {digest}")
+    actual_sha=hashlib.sha256(body).hexdigest()
+    pinned=asset.get("sha256_source",{}).get(kind)
+    if not pinned:
+        raise RuntimeError(f"Unpinned source SHA256 {asset['id']}/{kind}")
+    if actual_sha.lower()!=pinned.lower():
+        raise RuntimeError(f"Pinned SHA256 mismatch {asset['id']}/{kind}")
     with Image.open(io.BytesIO(body)) as stream:
         image=stream.copy()
         image.load()
@@ -110,7 +116,7 @@ def decode_and_verify(entry,asset,kind):
         raise RuntimeError(f"Unexpected source dimensions for {asset['id']}/{kind}: {image.size}")
     size=1024 if asset["resolution"]=="1k" else 512
     image=ImageOps.fit(image.convert("RGB"),(size,size),method=Image.Resampling.LANCZOS)
-    details={"map":kind,"url":url,"api_md5":expected,"sha256":hashlib.sha256(body).hexdigest()}
+    details={"map":kind,"url":url,"api_md5":expected,"sha256":actual_sha}
     return image,details
 
 def bake(manifest_path:Path,root:Path):
@@ -128,12 +134,11 @@ def bake(manifest_path:Path,root:Path):
         for kind in ("diff","nor_gl","rough","ao"):
             image,entry=decode_and_verify(files,asset,kind)
             parts[kind]=image;sources.append(entry)
-        # Optional real-world height/displacement map, never synthesized.
-        try:
+        # Height is mandatory once pinned in the manifest: a changed map
+        # can never be silently reclassified as "optional".
+        if asset.get("sha256_source",{}).get("disp"):
             image,entry=decode_and_verify(files,asset,"disp")
             parts["disp"]=image;sources.append(entry)
-        except RuntimeError as ex:
-            print("Optional height map unavailable",asset["id"],str(ex)[:140],flush=True)
         role=asset["role"]
         normal=parts["nor_gl"].copy()
         # Normal XY are preserved from photos; reconstruct positive Z in GLES.
