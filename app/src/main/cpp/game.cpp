@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <limits>
 #include <random>
 #include <string>
@@ -138,12 +139,21 @@ static void cone(ModelData& m,float y0,float y1,float rad,int segments){
 }
 static ModelData makeTrunk(bool pine){
     ModelData m;
-    cylinder(m,{0,0,0},{.08f,pine?7.1f:6.5f,0},pine?.26f:.31f,.07f,9);
+    cylinder(m,{0,0,0},{.08f,pine?7.1f:6.5f,0},pine?.27f:.35f,.07f,12);
+    if(!pine) {
+        for(int i=0;i<5;i++) {
+            float a=2.f*PI*float(i)/5.f;
+            Vec3 foot{.8f*std::cos(a),-.03f,.8f*std::sin(a)};
+            cylinder(m,{0,.47f,0},foot,.16f,.035f,5);
+        }
+    }
     if(!pine){
         cylinder(m,{0,3.4f,0},{1.7f,5.9f,.55f},.14f,.03f,6);
         cylinder(m,{0,4.0f,0},{-1.4f,6.5f,-.7f},.13f,.025f,6);
         cylinder(m,{.05f,4.8f,0},{.9f,7.4f,-1.2f},.10f,.025f,5);
         cylinder(m,{-.02f,4.4f,0},{-1.0f,6.0f,1.4f},.12f,.025f,5);
+        cylinder(m,{0,5.2f,.12f},{-.65f,7.5f,.98f},.08f,.018f,5);
+        cylinder(m,{.08f,3.75f,-.03f},{1.05f,5.1f,-1.8f},.095f,.016f,5);
     }
     return m;
 }
@@ -154,6 +164,8 @@ static ModelData makeBroadLeaves(){
     ellipsoid(m,{-1.25f,6.6f,-.4f},{1.7f,1.45f,1.6f});
     ellipsoid(m,{.15f,6.5f,-1.3f},{1.55f,1.5f,1.65f});
     ellipsoid(m,{-.4f,7.65f,.95f},{1.5f,1.5f,1.35f});
+    ellipsoid(m,{1.5f,5.95f,-.8f},{1.05f,.98f,1.1f},6,10);
+    ellipsoid(m,{-1.8f,5.8f,1.f},{1.1f,.95f,1.05f},6,10);
     return m;
 }
 static ModelData makeLeafDetail(){
@@ -161,13 +173,13 @@ static ModelData makeLeafDetail(){
     ModelData m;
     std::mt19937 rng(123984u);
     std::uniform_real_distribution<float> random(0.f,1.f);
-    for(int i=0;i<34;i++){
+    for(int i=0;i<80;i++){
         float a=random(rng)*2*PI;
         float v=random(rng)*2.f-1.f;
         float radial=std::sqrt(1.f-v*v);
         float r=1.7f+random(rng)*.80f;
         Vec3 center{std::cos(a)*radial*r,7.0f+v*1.65f,std::sin(a)*radial*r};
-        float sz=.60f+random(rng)*.75f;
+        float sz=.45f+random(rng)*.66f;
         Vec3 side{std::cos(a+PI*.5f)*sz,0,std::sin(a+PI*.5f)*sz};
         Vec3 up{0,sz*1.3f,0};
         m.quad(center-side,center+side,center+side+up,center-side+up,
@@ -179,7 +191,8 @@ static ModelData makePineLeaves(){
     ModelData m;
     cone(m,2.4f,5.9f,2.25f,12);
     cone(m,4.0f,7.15f,1.8f,12);
-    cone(m,5.45f,8.35f,1.23f,12);
+    cone(m,5.45f,8.35f,1.23f,14);
+    cone(m,6.65f,8.85f,.80f,14);
     return m;
 }
 static ModelData makeCards(float width,float h,int crosses){
@@ -220,23 +233,44 @@ void main(){vP=aPos;vN=aNormal;vUV=aUV;gl_Position=uVP*vec4(aPos,1.0);}
 static const char* TERRAIN_FS=R"GLSL(#version 300 es
 precision highp float;
 in vec3 vP;in vec3 vN;in vec2 vUV;
-uniform sampler2D uGrass;uniform sampler2D uDirt;uniform sampler2D uMoss;
-uniform vec3 uEye,uFog,uSun;uniform float uLight;
+uniform sampler2D uGrass,uDirt,uMoss,uGrassNormal,uDirtNormal,uMossNormal;
+uniform vec3 uEye,uFog,uSun;
+uniform float uLight;
 out vec4 Frag;
 float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+float ggxSpec(vec3 N,vec3 V,vec3 L,float roughness){
+    vec3 H=normalize(V+L);
+    float nh=max(dot(N,H),0.0),nl=max(dot(N,L),0.01),nv=max(dot(N,V),0.01);
+    float a=roughness*roughness,a2=a*a;
+    float D=a2/(3.14159265*pow(nh*nh*(a2-1.0)+1.0,2.0)+.0001);
+    float k=pow(roughness+1.0,2.0)*.125;
+    float G=nl/(nl*(1.0-k)+k)*nv/(nv*(1.0-k)+k);
+    float F=.04+.96*pow(1.0-max(dot(H,V),0.0),5.0);
+    return D*G*F/(4.0*max(nl*nv,.05));
+}
 void main(){
-    vec3 n=normalize(vN);
-    float slope=1.0-n.y;
-    float grain=hash(floor(vP.xz*0.125));
-    float dirt=clamp(slope*2.8+smoothstep(0.53,0.8,grain)*.30,0.0,0.86);
-    float moss=clamp((1.0-dirt)*(.26+.2*sin(vP.x*.033+vP.z*.045)),0.0,.40);
-    vec3 base=texture(uGrass,vUV*.16).rgb;
-    base=mix(base,texture(uMoss,vUV*.17).rgb,moss);
-    base=mix(base,texture(uDirt,vUV*.19).rgb,dirt);
-    float diff=max(dot(n,normalize(uSun)),0.0);
-    vec3 rgb=base*(.34 + .66*diff*uLight);
-    float dist=distance(uEye,vP);
-    float fog=smoothstep(105.0,285.0,dist);
+    vec3 N=normalize(vN),L=normalize(uSun),V=normalize(uEye-vP);
+    float slope=1.0-N.y;
+    float grain=hash(floor(vP.xz*.125));
+    float dirt=clamp(slope*2.6+smoothstep(.49,.83,grain)*.34,0.0,.80);
+    float moss=clamp((1.0-dirt)*(.24+.25*sin(vP.x*.030+vP.z*.039)),0.0,.5);
+    vec2 guv=vUV*.16,duv=vUV*.19,muv=vUV*.17;
+    vec3 albedo=mix(texture(uGrass,guv).rgb,texture(uMoss,muv).rgb,moss);
+    albedo=mix(albedo,texture(uDirt,duv).rgb,dirt);
+    vec2 gn=texture(uGrassNormal,guv).rg*2.0-1.0;
+    vec2 mn=texture(uMossNormal,muv).rg*2.0-1.0;
+    vec2 dn=texture(uDirtNormal,duv).rg*2.0-1.0;
+    vec2 mapXY=mix(mix(gn,mn,moss),dn,dirt);
+    vec3 n=normalize(N+vec3(mapXY.x*.72,0.0,mapXY.y*.72));
+    float diffuse=max(dot(n,L),0.0);
+    float wet=clamp(moss*.4+dirt*.22,0.0,.34);
+    float roughness=mix(.94,.69,wet);
+    float highlight=ggxSpec(n,V,L,roughness)*diffuse*.30;
+    vec3 rgb=albedo*(.28+.79*diffuse*uLight)+vec3(highlight*uLight);
+    rgb*=1.0-.12*smoothstep(.12,.7,slope);
+    rgb=rgb/(rgb+vec3(.34));
+    rgb=pow(rgb,vec3(.92));
+    float fog=smoothstep(92.0,276.0,distance(uEye,vP));
     Frag=vec4(mix(rgb,uFog,fog),1.0);
 }
 )GLSL";
@@ -265,18 +299,49 @@ void main(){
 static const char* INST_FS=R"GLSL(#version 300 es
 precision highp float;
 in vec3 vN,vP;in vec2 vUV;in float vTint,vType;
-uniform sampler2D uTex;
-uniform vec3 uEye,uFog,uSun;uniform float uLight,uCutout,uEmissive;
+uniform sampler2D uTex,uMaterialNormal;
+uniform vec3 uEye,uFog,uSun;
+uniform float uLight,uCutout,uEmissive,uRoughness,uBump,uFoliage;
 out vec4 Frag;
+float specGGX(vec3 N,vec3 V,vec3 L,float roughness){
+    vec3 H=normalize(V+L);
+    float nh=max(dot(N,H),0.0),nv=max(dot(N,V),0.01),nl=max(dot(N,L),0.01);
+    float a=roughness*roughness,a2=a*a;
+    float d=a2/(3.14159265*pow(nh*nh*(a2-1.0)+1.0,2.0)+.0001);
+    float k=pow(roughness+1.0,2.0)*.125;
+    float g=nl/(nl*(1.0-k)+k)*nv/(nv*(1.0-k)+k);
+    float f=.04+.96*pow(1.0-max(dot(H,V),0.0),5.0);
+    return d*g*f/(4.0*max(nl*nv,.05));
+}
 void main(){
     vec4 s=texture(uTex,vUV);
     if(s.a<uCutout)discard;
-    vec3 n=normalize(vN);
-    float diff=max(dot(n,normalize(uSun)),0.0);
-    vec3 rgb=s.rgb*(.38+.64*diff*uLight)*(0.84+vTint*.26);
-    if(vType>0.5)rgb*=vec3(.82,1.03,.84);
+    vec3 n=normalize(vN),V=normalize(uEye-vP),L=normalize(uSun);
+    if(uBump>.01){
+        vec3 q0=dFdx(vP),q1=dFdy(vP);
+        vec2 st0=dFdx(vUV),st1=dFdy(vUV);
+        float det=st0.x*st1.y-st0.y*st1.x;
+        if(abs(det)>.00001){
+            vec3 T=normalize((q0*st1.y-q1*st0.y)/det);
+            vec3 B=normalize((-q0*st1.x+q1*st0.x)/det);
+            vec3 map=texture(uMaterialNormal,vUV).rgb*2.0-1.0;
+            n=normalize(n+uBump*(T*map.x+B*map.y));
+        }
+    }
+    float nl=dot(n,L);
+    float diff=uFoliage>.5 ? (.43+.57*max(nl*.7+.30,0.0)) : (.26+.78*max(nl,0.0)*uLight);
+    vec3 rgb=s.rgb*diff*(.82+vTint*.33);
+    if(uFoliage>.5){
+        float transmission=pow(max(-nl,0.0),1.7)*.23*uLight;
+        rgb+=s.rgb*vec3(.38,.60,.18)*transmission;
+    }else{
+        rgb+=vec3(specGGX(n,V,L,uRoughness)*max(nl,0.0)*uLight*.46);
+    }
+    if(vType>.5)rgb*=vec3(.84,1.04,.86);
     rgb+=uEmissive*vec3(.10,.44,.65);
-    float fog=smoothstep(105.0,285.0,distance(uEye,vP));
+    rgb=rgb/(rgb+vec3(.32));
+    rgb=pow(rgb,vec3(.94));
+    float fog=smoothstep(92.0,276.0,distance(uEye,vP));
     Frag=vec4(mix(rgb,uFog,fog),s.a);
 }
 )GLSL";
@@ -311,7 +376,7 @@ static GLuint program(const char*vs,const char*fs){
 }
 static GLuint createTexture(){
     GLuint t;glGenTextures(1,&t);glBindTexture(GL_TEXTURE_2D,t);
-    uint8_t px[]={195,197,194,255};
+    uint8_t px[]={128,128,255,255};
     glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,1,1,0,GL_RGBA,GL_UNSIGNED_BYTE,px);
     glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR_MIPMAP_LINEAR);
     glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
@@ -348,7 +413,7 @@ struct Relic {float x,z;bool picked=false;};
 struct State {
     int width=1280,height=720;
     GLuint terrainProg=0,instProg=0,shadowProg=0;
-    GLuint tex[7]{};
+    GLuint tex[11]{};
     Mesh trunk,pineTrunk,leaves,leafDetail,pineLeaves,grass,shrub,rock,shadow,crystal;
     std::unordered_map<int64_t,ChunkData> chunks;
     Batches batches;
@@ -391,21 +456,24 @@ static ChunkData makeChunk(int cx,int cz){
         float z=cz*CHUNK+3.f+unit(rng)*(CHUNK-6.f);
         return {x,height(x,z),z};
     };
-    for(int i=0;i<13;i++){
+    const float forestDensity=.65f+noise((cx+.5f)*.57f,(cz+.5f)*.57f)*.72f;
+    const int treeCount=int(12.f*forestDensity);
+    for(int i=0;i<treeCount;i++){
         Vec3 p=samplePos();
         if(std::hypot(p.x,p.z)<8.f)continue;
-        float scale=.76f+unit(rng)*.58f,angle=unit(rng)*6.283f,tint=unit(rng);
+        float scale=.67f+unit(rng)*.79f,angle=unit(rng)*6.283f,tint=unit(rng);
         Instance ins{p.x,p.y,p.z,scale,angle,tint,0,0};
         if(unit(rng)<.41f){ins.type=1;out.pine.push_back(ins);}else out.broad.push_back(ins);
         out.shadow.push_back({p.x,p.y+.06f,p.z,scale*1.65f,0,tint,0,0});
     }
-    for(int i=0;i<235;i++){
+    const int undergrowthCount=int(200.f*forestDensity);
+    for(int i=0;i<undergrowthCount;i++){
         Vec3 p=samplePos();float scale=.55f+unit(rng)*1.10f;
         Instance ins{p.x,p.y+.025f,p.z,scale,unit(rng)*6.283f,unit(rng),0,0};
         if(i%19==0)out.shrub.push_back({p.x,p.y,p.z,scale*2.f,ins.rotation,ins.tint,0,0});
         else out.grass.push_back(ins);
     }
-    for(int i=0;i<5;i++){
+    for(int i=0;i<8;i++){
         Vec3 p=samplePos();out.stones.push_back({p.x,p.y-.2f,p.z,.35f+unit(rng)*.7f,unit(rng)*6.283f,unit(rng),0,0});
     }
     return out;
@@ -463,10 +531,15 @@ static void instDraw(const Mesh& mesh,const std::vector<Instance>& instances){
 static void material(int index,float cutout,float wind,float emissive=0.f,float spin=0.f){
     glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_2D,game.tex[index]);
     glUniform1i(glGetUniformLocation(game.instProg,"uTex"),0);
+    glActiveTexture(GL_TEXTURE1);glBindTexture(GL_TEXTURE_2D,game.tex[10]);
+    glUniform1i(glGetUniformLocation(game.instProg,"uMaterialNormal"),1);
     set1(game.instProg,"uCutout",cutout);
     set1(game.instProg,"uWind",wind);
     set1(game.instProg,"uEmissive",emissive);
     set1(game.instProg,"uSpin",spin);
+    set1(game.instProg,"uRoughness",index==3?.83f:.94f);
+    set1(game.instProg,"uBump",index==3?.63f:0.f);
+    set1(game.instProg,"uFoliage",(index==4||index==5||index==6)?1.f:0.f);
 }
 static void update(float dt){
     dt=clampf(dt,0.f,.05f);game.t+=dt;
@@ -515,10 +588,16 @@ static void draw(float dt){
     Mat4 vp=multiply(proj,view);
     glEnable(GL_DEPTH_TEST);glDepthFunc(GL_LEQUAL);glDisable(GL_BLEND);
     common(game.terrainProg,vp,eye,fog,light);
-    for(int i=0;i<3;i++){glActiveTexture(GL_TEXTURE0+i);glBindTexture(GL_TEXTURE_2D,game.tex[i]);}
+    for(int i=0;i<3;i++){
+        glActiveTexture(GL_TEXTURE0+i);glBindTexture(GL_TEXTURE_2D,game.tex[i]);
+        glActiveTexture(GL_TEXTURE3+i);glBindTexture(GL_TEXTURE_2D,game.tex[7+i]);
+    }
     glUniform1i(glGetUniformLocation(game.terrainProg,"uGrass"),0);
     glUniform1i(glGetUniformLocation(game.terrainProg,"uDirt"),1);
     glUniform1i(glGetUniformLocation(game.terrainProg,"uMoss"),2);
+    glUniform1i(glGetUniformLocation(game.terrainProg,"uGrassNormal"),3);
+    glUniform1i(glGetUniformLocation(game.terrainProg,"uDirtNormal"),4);
+    glUniform1i(glGetUniformLocation(game.terrainProg,"uMossNormal"),5);
     for(const auto& pair:game.chunks){const Mesh& m=pair.second.terrain;
         glBindVertexArray(m.vao);glDrawElements(GL_TRIANGLES,m.count,GL_UNSIGNED_INT,nullptr);
     }
@@ -567,7 +646,7 @@ static void initialize(){
     for(auto &t:game.tex)t=createTexture();
     game.ready=true;
     glDisable(GL_CULL_FACE);
-    LOGE("Engine ready: GLES3 / procedural 2048m terrain");
+    LOGE("Engine ready: GLES3 / 2K world / normal-mapped materials");
 }
 extern "C" JNIEXPORT void JNICALL
 Java_com_florestaviva_game_MainActivity_nativeCreate(JNIEnv*,jclass){initialize();}
@@ -577,7 +656,7 @@ Java_com_florestaviva_game_MainActivity_nativeResize(JNIEnv*,jclass,jint w,jint 
 }
 extern "C" JNIEXPORT void JNICALL
 Java_com_florestaviva_game_MainActivity_nativeUploadTexture(JNIEnv*env,jclass,jint index,jobject bitmap){
-    if(index<0||index>=7||!bitmap||!game.ready)return;
+    if(index<0||index>=11||!bitmap||!game.ready)return;
     AndroidBitmapInfo info{};
     if(AndroidBitmap_getInfo(env,bitmap,&info)!=ANDROID_BITMAP_RESULT_SUCCESS || info.format!=ANDROID_BITMAP_FORMAT_RGBA_8888)return;
     void* pixels=nullptr;
@@ -597,6 +676,17 @@ Java_com_florestaviva_game_MainActivity_nativeUploadTexture(JNIEnv*env,jclass,ji
     }
     AndroidBitmap_unlockPixels(env,bitmap);
     glGenerateMipmap(GL_TEXTURE_2D);
+    static bool checked=false, anisotropy=false;
+    if(!checked){
+        GLint extensionCount=0;
+        glGetIntegerv(GL_NUM_EXTENSIONS,&extensionCount);
+        for(GLint e=0;e<extensionCount;e++){
+            const char* extension=reinterpret_cast<const char*>(glGetStringi(GL_EXTENSIONS,GLuint(e)));
+            if(extension && std::strcmp(extension,"GL_EXT_texture_filter_anisotropic")==0){anisotropy=true;break;}
+        }
+        checked=true;
+    }
+    if(anisotropy)glTexParameterf(GL_TEXTURE_2D,0x84FE,4.0f);
 }
 extern "C" JNIEXPORT void JNICALL
 Java_com_florestaviva_game_MainActivity_nativeInput(JNIEnv*,jclass,jfloat mx,jfloat mz,

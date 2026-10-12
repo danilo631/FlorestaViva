@@ -106,7 +106,8 @@ public class MainActivity extends Activity {
             String saved=getSharedPreferences("floresta_save",MODE_PRIVATE).getString("progress",null);
             if(saved!=null)nativeLoad(saved);
             String[] files = {"grass.png","soil.png","moss.png","bark.png",
-                    "canopy.png","blades.png","bush.png"};
+                    "canopy.png","blades.png","bush.png",
+                    "grass_normal.png","soil_normal.png","moss_normal.png","bark_normal.png"};
             BitmapFactory.Options opts = new BitmapFactory.Options();
             opts.inScaled = false;
             opts.inPreferredConfig = Bitmap.Config.ARGB_8888;

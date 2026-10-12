@@ -129,3 +129,10 @@ O Python só é necessário para **regenerar** as imagens; as imagens prontas es
 ## Licença
 
 Código e recursos gerados nesta versão podem ser reutilizados sob os termos do arquivo `LICENSE` (MIT). Para recursos externos futuros, respeite as licenças correspondentes.
+
+
+## Graphics 2.0
+
+Renderização OpenGL ES 3.0 aprimorada: normal mapping gerado das imagens, iluminação especular GGX simplificada, casca de árvore com bump mapping, iluminação de transmissão nas folhas, copas e raízes extras, densidade de vegetação variável e filtro anisotrópico opcional. Não há ray tracing nem PBR medido; estas técnicas são aproximações móveis. Os mapas de normais são gerados no build via Python + Pillow + NumPy pelo workflow.
+
+Para atualizar as cores com as texturas fotográficas da versão 2.0, envie os sete PNGs do pacote FlorestaViva_Graphics_2 para `app/src/main/assets/`. O workflow também funciona com os PNGs antigos caso você ainda não tenha enviado as novas imagens.
