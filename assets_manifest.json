@@ -1,0 +1,230 @@
+{
+  "schema_version": 1,
+  "license_policy": "CC0 only for installed resources; external metadata MD5 plus source SHA256 logged and checked",
+  "source": "https://api.polyhaven.com",
+  "resolution_default": "1k",
+  "texture_sets": [
+    {
+      "id": "forrest_ground_01",
+      "name": "Forest Ground 01",
+      "author": "Rob Tuytel",
+      "role": "grass",
+      "resolution": "1k",
+      "license": "CC0-1.0",
+      "url": "https://polyhaven.com/a/forrest_ground_01",
+      "maps": [
+        "diff",
+        "nor_gl",
+        "rough",
+        "ao"
+      ],
+      "optional_maps": [
+        "disp"
+      ],
+      "checksum_policy": "API md5 required; download SHA256 written to build manifest"
+    },
+    {
+      "id": "leaves_forest_ground",
+      "name": "Leaves Forest Ground",
+      "author": "Dimitrios Savva; Dario Barresi",
+      "role": "soil",
+      "resolution": "1k",
+      "license": "CC0-1.0",
+      "url": "https://polyhaven.com/a/leaves_forest_ground",
+      "maps": [
+        "diff",
+        "nor_gl",
+        "rough",
+        "ao"
+      ],
+      "optional_maps": [
+        "disp"
+      ],
+      "checksum_policy": "API md5 required; download SHA256 written to build manifest"
+    },
+    {
+      "id": "forest_leaves_02",
+      "name": "Forest Leaves 02",
+      "author": "Poly Haven contributors (verify asset metadata)",
+      "role": "moss",
+      "resolution": "1k",
+      "license": "CC0-1.0",
+      "url": "https://polyhaven.com/a/forest_leaves_02",
+      "maps": [
+        "diff",
+        "nor_gl",
+        "rough",
+        "ao"
+      ],
+      "optional_maps": [
+        "disp"
+      ],
+      "checksum_policy": "API md5 required; download SHA256 written to build manifest"
+    },
+    {
+      "id": "bark_brown_02",
+      "name": "Bark Brown 02",
+      "author": "Rob Tuytel",
+      "role": "bark",
+      "resolution": "1k",
+      "license": "CC0-1.0",
+      "url": "https://polyhaven.com/a/bark_brown_02",
+      "maps": [
+        "diff",
+        "nor_gl",
+        "rough",
+        "ao"
+      ],
+      "optional_maps": [
+        "disp"
+      ],
+      "checksum_policy": "API md5 required; download SHA256 written to build manifest"
+    },
+    {
+      "id": "pine_bark",
+      "name": "Pine Bark",
+      "author": "Dimitrios Savva",
+      "role": "pine_bark",
+      "resolution": "1k",
+      "license": "CC0-1.0",
+      "url": "https://polyhaven.com/a/pine_bark",
+      "maps": [
+        "diff",
+        "nor_gl",
+        "rough",
+        "ao"
+      ],
+      "optional_maps": [
+        "disp"
+      ],
+      "checksum_policy": "API md5 required; download SHA256 written to build manifest"
+    },
+    {
+      "id": "mossy_rock",
+      "name": "Mossy Rock",
+      "author": "Rob Tuytel",
+      "role": "rock",
+      "resolution": "1k",
+      "license": "CC0-1.0",
+      "url": "https://polyhaven.com/a/mossy_rock",
+      "maps": [
+        "diff",
+        "nor_gl",
+        "rough",
+        "ao"
+      ],
+      "optional_maps": [
+        "disp"
+      ],
+      "checksum_policy": "API md5 required; download SHA256 written to build manifest"
+    },
+    {
+      "id": "clean_pebbles",
+      "name": "Clean Pebbles",
+      "author": "Poly Haven contributors (verify asset metadata)",
+      "role": "riverbed",
+      "resolution": "1k",
+      "license": "CC0-1.0",
+      "url": "https://polyhaven.com/a/clean_pebbles",
+      "maps": [
+        "diff",
+        "nor_gl",
+        "rough",
+        "ao"
+      ],
+      "optional_maps": [
+        "disp"
+      ],
+      "checksum_policy": "API md5 required; download SHA256 written to build manifest"
+    },
+    {
+      "id": "bark_platanus",
+      "name": "Bark Platanus",
+      "author": "Dimitrios Savva",
+      "role": "bark_platanus",
+      "resolution": "1k",
+      "license": "CC0-1.0",
+      "url": "https://polyhaven.com/a/bark_platanus",
+      "maps": [
+        "diff",
+        "nor_gl",
+        "rough",
+        "ao"
+      ],
+      "optional_maps": [
+        "disp"
+      ],
+      "checksum_policy": "API md5 required; download SHA256 written to build manifest"
+    },
+    {
+      "id": "bark_willow",
+      "name": "Bark Willow",
+      "author": "Dario Barresi; Dimitrios Savva",
+      "role": "bark_willow",
+      "resolution": "1k",
+      "license": "CC0-1.0",
+      "url": "https://polyhaven.com/a/bark_willow",
+      "maps": [
+        "diff",
+        "nor_gl",
+        "rough",
+        "ao"
+      ],
+      "optional_maps": [
+        "disp"
+      ],
+      "checksum_policy": "API md5 required; download SHA256 written to build manifest"
+    }
+  ],
+  "scanned_foliage": [
+    {
+      "id": "Leaf001",
+      "url": "https://ambientcg.com/view?id=Leaf001",
+      "license": "CC0-1.0",
+      "role": "leaf atlas source"
+    },
+    {
+      "id": "LeafSet024",
+      "url": "https://ambientcg.com/view?id=LeafSet024",
+      "license": "CC0-1.0",
+      "role": "leaf atlas source"
+    }
+  ],
+  "model_candidates": [
+    {
+      "id": "tree_stump_01",
+      "url": "https://polyhaven.com/a/tree_stump_01",
+      "license": "CC0-1.0",
+      "status": "not_yet_integrated",
+      "reason": "requires glTF conversion, LOD and Android rendering"
+    },
+    {
+      "id": "dead_tree_trunk_02",
+      "url": "https://polyhaven.com/a/dead_tree_trunk_02",
+      "license": "CC0-1.0",
+      "status": "not_yet_integrated",
+      "reason": "requires glTF conversion and LOD"
+    },
+    {
+      "id": "tree_small_02",
+      "url": "https://polyhaven.com/a/tree_small_02",
+      "license": "CC0-1.0",
+      "status": "not_yet_integrated",
+      "reason": "5M source triangles; needs meshoptimizer and texture bake"
+    },
+    {
+      "id": "pine_tree_01",
+      "url": "https://polyhaven.com/a/pine_tree_01",
+      "license": "CC0-1.0",
+      "status": "not_yet_integrated",
+      "reason": "high-poly source needs aggressive LOD"
+    },
+    {
+      "id": "fox_khronos",
+      "url": "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/Fox",
+      "license": "CC0-1.0 AND CC-BY-4.0",
+      "status": "not_yet_integrated",
+      "reason": "animated skinned mesh needs skinning and exact attribution"
+    }
+  ]
+}
