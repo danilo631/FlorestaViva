@@ -566,7 +566,7 @@ struct ChunkData {
     std::vector<Instance> broad,pine,grass,shrub,fern,seedling,litter,reeds,flowers,stones,logs,shadow;
 };
 struct Batches {
-    std::vector<Instance> broad,pine,grass,shrub,fern,seedling,litter,stones,logs,shadow;
+    std::vector<Instance> broad,pine,grass,shrub,fern,seedling,litter,reeds,flowers,stones,logs,shadow;
     void clear(){broad.clear();pine.clear();grass.clear();shrub.clear();fern.clear();seedling.clear();litter.clear();reeds.clear();flowers.clear();stones.clear();logs.clear();shadow.clear();}
 };
 struct Relic {float x,z;bool picked=false;};
@@ -768,7 +768,7 @@ static void material(int index,float cutout,float wind,float emissive=0.f,float 
     glUniform1i(glGetUniformLocation(game.instProg,"uTex"),0);
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D,game.tex[layer>=0?20:
-        (index==15?16:(index==17?18:10))]);
+        (index==27?28:(index==15?16:(index==17?18:10)))]);
     glUniform1i(glGetUniformLocation(game.instProg,"uMaterialNormal"),1);
     if(layer>=0){
         float x=(layer%2)*.5f,y=(layer/2)*.5f;
@@ -789,19 +789,89 @@ static void material(int index,float cutout,float wind,float emissive=0.f,float 
     set1(game.instProg,"uSpin",spin);
     set1(game.instProg,"uRoughness",(index==3||index==15)?.83f:(index==17?.90f:.94f));
     set1(game.instProg,"uBump",(index==3||index==15)?.63f:
-          (index==17?.42f:((index==11||index==13||index==5||index==6)?.64f:0.f)));
+          (index==17?.42f:((index==11||index==13||index==5||index==6)?.64f:
+                            (index==27?.30f:0.f))));
     set1(game.instProg,"uFoliage",(index==4||index==5||index==6||index==11||index==13)?1.f:0.f);
     set1(game.instProg,"uLeafFlutter",(index==11||index==13)?0.04f:0.f);
     set1(game.instProg,"uLeafLitter",0.f);
 }
+static void simulateWildlife(float dt){
+    // Deterministic population around the moving player; persistent agents
+    // keep their paths until they stream out. Capped for predictable mobile cost.
+    if(game.wildlife.empty()){
+        std::mt19937 rng(0x5EED851u);
+        std::uniform_real_distribution<float> random(0.f,1.f);
+        for(int i=0;i<30;i++){
+            float angle=random(rng)*2.f*PI;
+            float radius=24.f+random(rng)*105.f;
+            ForestAnimal a;
+            a.x=clampf(game.x+std::cos(angle)*radius,-WORLD_HALF+15,WORLD_HALF-15);
+            a.z=clampf(game.z+std::sin(angle)*radius,-WORLD_HALF+15,WORLD_HALF-15);
+            a.homeX=a.x;a.homeZ=a.z;
+            a.species=i%3;a.angle=random(rng)*2.f*PI;
+            a.phase=random(rng)*6.f;
+            game.wildlife.push_back(a);
+        }
+    }
+    for(auto &a:game.wildlife){
+        float dx=a.x-game.x,dz=a.z-game.z;
+        float ds=std::sqrt(dx*dx+dz*dz);
+        if(ds>175.f){
+            // Reuse agents instead of allocating and destroying actors.
+            float phase=a.phase*9.1f+float(a.species)*2.1f;
+            a.x=clampf(game.x+std::cos(phase)*125.f,-WORLD_HALF+12,WORLD_HALF-12);
+            a.z=clampf(game.z+std::sin(phase)*125.f,-WORLD_HALF+12,WORLD_HALF-12);
+            a.homeX=a.x;a.homeZ=a.z;
+            ds=125.f;
+        }
+        a.phase+=dt*(a.species==2?5.f:3.5f);
+        a.fleeing=ds<17.f;
+        if(a.fleeing){
+            a.angle=std::atan2(dx,dz);
+        }else{
+            a.angle+=dt*(.17f*std::sin(a.phase*.12f+a.species*3.f));
+            float homeDX=a.homeX-a.x,homeDZ=a.homeZ-a.z;
+            if(homeDX*homeDX+homeDZ*homeDZ>58.f*58.f){
+                a.angle=std::atan2(homeDX,homeDZ);
+            }
+        }
+        float movement=(a.fleeing?(a.species==0?5.0f:3.2f):.57f+
+              .26f*std::sin(a.phase*.38f))*dt;
+        const float nx=clampf(a.x+std::sin(a.angle)*movement,-WORLD_HALF+11,WORLD_HALF-11);
+        const float nz=clampf(a.z+std::cos(a.angle)*movement,-WORLD_HALF+11,WORLD_HALF-11);
+        if(riverDistance(nx,nz)>riverWidth(nz)+2.2f){
+            a.x=nx;a.z=nz;
+        }else{
+            a.angle+=PI*.43f*dt+dt*2.f;
+        }
+        if(std::hypot(a.x-game.x,a.z-game.z)<19.f){
+            game.seenSpecies|=1u<<unsigned(a.species);
+        }
+    }
+}
+
 static void update(float dt){
     dt=clampf(dt,0.f,.05f);game.t+=dt;
     game.yaw-=game.lookX*.0034f;game.pitch=clampf(game.pitch-game.lookY*.003f,-1.35f,1.35f);
     game.lookX=game.lookY=0;
+    simulateWildlife(dt);
+    const float distanceToRiver=riverDistance(game.x,game.z);
+    if(distanceToRiver<riverWidth(game.z)+5.f)game.reachedRiver=true;
+    if(game.jumpQueued && game.feetOffset<.002f){
+        game.verticalVelocity=6.4f;
+        game.jumps++;
+    }
+    game.jumpQueued=false;
+    if(game.feetOffset>0.f || game.verticalVelocity>0.f){
+        game.feetOffset+=game.verticalVelocity*dt;
+        game.verticalVelocity-=17.5f*dt;
+        if(game.feetOffset<0.f){game.feetOffset=0;game.verticalVelocity=0;}
+    }
     Vec3 f{std::sin(game.yaw),0,std::cos(game.yaw)},rt{-f.z,0,f.x};
     Vec3 delta=f*game.moveZ+rt*game.moveX;
     if(dot(delta,delta)>1.f)delta=normalize(delta);
-    float speed=(game.running?7.5f:4.2f)*dt;
+    const bool immersed=riverDistance(game.x,game.z)<riverWidth(game.z)-1.f;
+    float speed=(game.running?7.5f:4.2f)*(immersed?.55f:1.f)*dt;
     float nx=clampf(game.x+delta.x*speed,-WORLD_HALF+8,WORLD_HALF-8);
     float nz=clampf(game.z+delta.z*speed,-WORLD_HALF+8,WORLD_HALF-8);
     auto blocked=[&](float px,float pz){
@@ -1007,7 +1077,7 @@ static void draw(float dt){
         glBindVertexArray(game.skyVao);glDrawArrays(GL_TRIANGLES,0,3);glBindVertexArray(0);
         glDepthMask(GL_TRUE);
     }
-    Vec3 eye{game.x,height(game.x,game.z)+1.72f,game.z};
+    Vec3 eye{game.x,height(game.x,game.z)+game.feetOffset+1.72f,game.z};
     Vec3 dir{std::sin(game.yaw)*std::cos(game.pitch),std::sin(game.pitch),std::cos(game.yaw)*std::cos(game.pitch)};
     Mat4 view=lookAt(eye,eye+dir);
     Mat4 proj=perspective(68.f*PI/180.f,float(game.width)/std::max(game.height,1),.11f,310.f);
@@ -1126,8 +1196,31 @@ static void draw(float dt){
     set1(game.instProg,"uLeafLitter",1.f);
     instDraw(game.leafLitter,nearLitter);
     set1(game.instProg,"uLeafLitter",0.f);
+    std::vector<Instance> nearReeds,nearFlowers;
+    closeVegetation(game.batches.reeds,nearReeds,game.graphicsQuality==2?73.f:47.f);
+    closeVegetation(game.batches.flowers,nearFlowers,game.graphicsQuality==2?60.f:40.f);
+    material(5,.38f,.48f);instDraw(game.reedsMesh,nearReeds);
+    material(29,.02f,.34f);instDraw(game.flowersMesh,nearFlowers);
     material(17,0.f,0.f);instDraw(game.rock,game.batches.stones);
     material(3,0.f,0.f);instDraw(game.fallenLog,game.batches.logs);
+    // Autonomous wildlife drawn in three anatomical meshes and fur materials.
+    std::array<std::vector<Instance>,3> wildlifeInstances;
+    for(const ForestAnimal &a:game.wildlife){
+        const float d=std::hypot(a.x-game.x,a.z-game.z);
+        const float wildlifeRange=game.graphicsQuality==0?75.f:145.f;
+        if(d>wildlifeRange)continue;
+        const float bob=.023f*std::sin(a.phase);
+        wildlifeInstances[a.species].push_back({a.x,height(a.x,a.z)+bob,a.z,
+             a.species==0?1.f:(a.species==1?.92f:.94f),
+             a.angle, .55f+.30f*std::sin(a.phase*.31f),0,0});
+    }
+    for(int species=0;species<3;species++){
+        material(27,0.f,0.f);
+        const float start=float(species)/3.f;
+        glUniform4f(glGetUniformLocation(game.instProg,"uAtlasRect"),
+                    start+.0006f,.001f,1.f/3.f-.0012f,.998f);
+        instDraw(game.wildlifeMeshes[species],wildlifeInstances[species]);
+    }
     if(game.collected<RELIC_COUNT){
         std::vector<Instance> floating;
         for(const Relic&r:game.relics)if(!r.picked){
@@ -1136,6 +1229,36 @@ static void draw(float dt){
         }
         material(2,0,0,2.1f,game.t*.75f);
         instDraw(game.crystal,floating);
+    }
+    // River is transparent; draw after opaque geometry with depth writes off.
+    // Masking by the carved terrain avoids a floating blue overlay.
+    if(game.riverProg){
+        glUseProgram(game.riverProg);
+        glUniformMatrix4fv(glGetUniformLocation(game.riverProg,"uVP"),
+                           1,GL_FALSE,vp.m);
+        set3(game.riverProg,"uEye",eye);
+        set3(game.riverProg,"uFog",fog);
+        set3(game.riverProg,"uSun",normalize({.62f,.87f,.33f}));
+        set1(game.riverProg,"uTime",game.t);
+        set1(game.riverProg,"uLight",light);
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D,game.tex[25]);
+        glUniform1i(glGetUniformLocation(game.riverProg,"uWaterNormal"),0);
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D,game.tex[26]);
+        glUniform1i(glGetUniformLocation(game.riverProg,"uRiverStones"),1);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
+        glDepthMask(GL_FALSE);
+        for(const auto& pair:game.chunks){
+            const Mesh& water=pair.second.river;
+            if(!water.count)continue;
+            glBindVertexArray(water.vao);
+            glDrawElements(GL_TRIANGLES,water.count,GL_UNSIGNED_INT,nullptr);
+        }
+        glBindVertexArray(0);
+        glDepthMask(GL_TRUE);
+        glDisable(GL_BLEND);
     }
     if(usePost)presentPostFrame();
 }
