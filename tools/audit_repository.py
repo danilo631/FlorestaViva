@@ -19,9 +19,11 @@ def dimensions(path):
     with Image.open(path) as im:
         return {"pixels":list(im.size),"channels":im.mode,"format":im.format}
 
-def audit(base,output):
+def audit(base,output,include_untracked=False):
     root=Path("app/src/main/assets")
     tracked=subprocess.check_output(["git","ls-files","--",str(root)],text=True).splitlines()
+    if include_untracked:
+        tracked=sorted(set(tracked)|{p.as_posix() for p in root.rglob("*") if p.is_file()})
     rows=[]
     for name in tracked:
         p=Path(name)
@@ -61,5 +63,6 @@ if __name__=="__main__":
     parser=argparse.ArgumentParser()
     parser.add_argument("--baseline",default="eaca26c8b34d5287c4278e0cecaf8ffd2b7b5084")
     parser.add_argument("--output",type=Path,default=Path("build/audit/source_assets.json"))
+    parser.add_argument("--include-untracked",action="store_true")
     args=parser.parse_args()
-    audit(args.baseline,args.output)
+    audit(args.baseline,args.output,args.include_untracked)
