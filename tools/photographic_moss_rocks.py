@@ -1,6 +1,6 @@
 """Build-time licensed photogrammetric mossy rock material (Poly Haven CC0).
 
-The Godot-4-forest-benchmark references the mossy_rock MODEL.
+The Godot-4-forest-benchmark references the rock_moss_set_02 MODEL.
 We instead use the independent Mossy Rock TEXTURE to avoid depending on
 proprietary model-conversion pipelines and ensure simple stable URL paths.
 We download the original CC0 maps independently, never copy Godot project assets.
