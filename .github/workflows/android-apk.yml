@@ -367,6 +367,44 @@ jobs:
           if-no-files-found: error
 
 
+      - name: Versionar mapas PBR fotografados no Git apos build verde
+        if: github.ref == 'refs/heads/feat/step1-audit-assets'
+        shell: bash
+        run: |
+          set -euo pipefail
+          REMOTE_SHA="$(git ls-remote origin refs/heads/feat/step1-audit-assets | cut -f1)"
+          if [ "$REMOTE_SHA" != "$GITHUB_SHA" ]; then
+            echo "Skip vendor commit from stale CI run: $GITHUB_SHA vs $REMOTE_SHA"
+            exit 0
+          fi
+          python - <<'PY' > /tmp/forest_vendor_files.txt
+          import json
+          from pathlib import Path
+          root=Path("app/src/main/assets")
+          data=json.loads(Path("assets_manifest.json").read_text())
+          targets=[]
+          for asset in data["texture_sets"]:
+              for ext in (".png","_normal.png","_rough.png","_height.png"):
+                  candidate=root/(asset["role"]+ext)
+                  if candidate.is_file():targets.append(candidate)
+          targets.extend(root.glob("ktx2/*.ktx2"))
+          targets.extend(root.glob("scanned_*.fvmesh"))
+          targets.extend([root/"assets_provenance.json",root/"scanned_models_manifest.json",
+                          root/"ktx2_codec_manifest.json",root/"foliage_color.png",
+                          root/"foliage_normal.png"])
+          for target in targets:
+              if target.is_file():print(target)
+          PY
+          while IFS= read -r path; do git add -f -- "$path"; done < /tmp/forest_vendor_files.txt
+          if git diff --cached --quiet; then
+            echo "No changes to verified photographic inputs"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Vendor photographed CC0 PBR maps, KTX2 textures and scanned glTF LOD binaries"
+          git push origin HEAD:refs/heads/feat/step1-audit-assets
+
   capture:
     if: github.ref == 'refs/heads/feat/step1-audit-assets'
     needs: android
