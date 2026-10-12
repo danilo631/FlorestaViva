@@ -484,6 +484,7 @@ void main(){
 )GLSL";
 static const char* POST_FS=R"GLSL(#version 300 es
 precision highp float;
+precision highp sampler2DShadow;
 uniform sampler2D uColor;
 uniform sampler2D uDepth;
 uniform vec2 uResolution;
@@ -694,7 +695,7 @@ struct State {
     int depthMapSize=0;
     bool treeDepthReady=false;
     Mat4 sunShadowMatrix{};
-    GLuint tex[31]{};
+    GLuint tex[32]{};
     GLuint riverProg=0;
     Mesh wildlifeMeshes[3],reedsMesh,flowersMesh;
     std::vector<ForestAnimal> wildlife;
@@ -930,7 +931,7 @@ static void material(int index,float cutout,float wind,float emissive=0.f,float 
     }else{
         glUniform4f(glGetUniformLocation(game.instProg,"uAtlasRect"),0.f,0.f,1.f,1.f);
     }
-    const int roughSlot=index==3?23:(index==15?24:-1);
+    const int roughSlot=index==3?23:(index==15?24:(index==17?31:-1));
     glActiveTexture(GL_TEXTURE5);
     glBindTexture(GL_TEXTURE_2D,game.tex[roughSlot>=0?roughSlot:23]);
     glUniform1i(glGetUniformLocation(game.instProg,"uMaterialRough"),5);
@@ -939,7 +940,7 @@ static void material(int index,float cutout,float wind,float emissive=0.f,float 
     set1(game.instProg,"uWind",wind);
     set1(game.instProg,"uEmissive",emissive);
     set1(game.instProg,"uSpin",spin);
-    set1(game.instProg,"uRoughness",(index==3||index==15)?.83f:(index==17?.90f:.94f));
+    set1(game.instProg,"uRoughness",(index==3||index==15)?.83f:(index==17?.72f:.94f));
     set1(game.instProg,"uBump",(index==3||index==15)?.63f:
           (index==17?.42f:((index==11||index==13||index==5||index==6)?.64f:
                             (index==27?.30f:0.f))));
@@ -1605,7 +1606,7 @@ Java_com_florestaviva_game_MainActivity_nativeResize(JNIEnv*,jclass,jint w,jint 
 }
 extern "C" JNIEXPORT void JNICALL
 Java_com_florestaviva_game_MainActivity_nativeUploadTexture(JNIEnv*env,jclass,jint index,jobject bitmap){
-    if(index<0||index>=31||!bitmap||!game.ready)return;
+    if(index<0||index>=32||!bitmap||!game.ready)return;
     AndroidBitmapInfo info{};
     if(AndroidBitmap_getInfo(env,bitmap,&info)!=ANDROID_BITMAP_RESULT_SUCCESS || info.format!=ANDROID_BITMAP_FORMAT_RGBA_8888)return;
     void* pixels=nullptr;
