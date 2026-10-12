@@ -2,7 +2,7 @@ name: Gerar APK Android
 on:
   workflow_dispatch:
   push:
-    branches: [main, master, graphics3-atlas-vulkan-sky, graphics4-procedural-aaa-vegetation, graphics5-dense-vegetation-vulkan-compute, graphics6-shadows-material-rework]
+    branches: [main, master, graphics3-atlas-vulkan-sky, graphics4-procedural-aaa-vegetation, graphics5-dense-vegetation-vulkan-compute, graphics6-shadows-material-rework, graphics7-scanned-foliage-postfx]
   pull_request:
     branches: [main]
 permissions:
@@ -46,16 +46,16 @@ jobs:
           set -euo pipefail
           python -m pip install --disable-pip-version-check pillow numpy
           python tools/material_maps.py --size 512
-          python tools/foliage_atlas.py --size 1024
+          python tools/scanned_leaf_atlas.py --size 2048
           python tools/forest_materials.py
-          python tools/foliage_pack.py --tile 768
+          python tools/foliage_pack.py --tile 1024
           python - <<'PY'
           from PIL import Image
           from pathlib import Path
           a=Path('app/src/main/assets')
           for p in ('foliage_color.png','foliage_normal.png'):
               img=Image.open(a/p)
-              assert img.size==(1536,1536) and img.mode=='RGBA'
+              assert img.size==(2048,2048) and img.mode=='RGBA'
           PY
           python - <<'PY'
           from pathlib import Path
@@ -68,7 +68,7 @@ jobs:
           assert Image.open(base/"pine_atlas.png").mode=="RGBA"
           assert Image.open(base/"pine_normal.png").mode=="RGBA"
           PY
-          python -c "from PIL import Image; a='app/src/main/assets/'; assert Image.open(a+'leaves_atlas.png').size==(1024,1024)"
+          python -c "from PIL import Image; a='app/src/main/assets/'; assert Image.open(a+'leaves_atlas.png').size==(2048,2048)"
       - name: Integrar materiais fotográficos PBR CC0
         shell: bash
         run: |
@@ -118,9 +118,9 @@ jobs:
           for filename in entries:
               if filename: assert (asset/filename).exists(),filename
           albedo=Image.open(asset/'foliage_color.png')
-          for y in (0,768):
-              for x in (0,768):
-                  cropped=albedo.crop((x,y,x+768,y+768))
+          for y in (0,1024):
+              for x in (0,1024):
+                  cropped=albedo.crop((x,y,x+1024,y+1024))
                   assert cropped.getchannel('A').getbbox() is not None
           print('Valid material slots, unified atlas quadrants and generated textures')
           PY
@@ -132,7 +132,7 @@ jobs:
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: FlorestaViva-Graphics6-APK
+          name: FlorestaViva-Graphics7-APK
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
       - name: Publicar APK direto em GitHub Releases
@@ -142,11 +142,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cp app/build/outputs/apk/debug/app-debug.apk FlorestaViva-Graphics6.apk
-          if ! gh release view graphics6 >/dev/null 2>&1; then
-            gh release create graphics6 --title 'Floresta Viva Graphics 6' --notes 'APK completo: materiais CC0 fotografados, sombras direcionais e vegetação procedural. Android arm64 e armeabi-v7a. Build de testes assinado com debug key.'
+          cp app/build/outputs/apk/debug/app-debug.apk FlorestaViva-Graphics7.apk
+          if ! gh release view graphics7 >/dev/null 2>&1; then
+            gh release create graphics7 --title 'Floresta Viva Graphics 7' --notes 'APK completo: materiais CC0 fotografados, sombras direcionais e vegetação procedural. Android arm64 e armeabi-v7a. Build de testes assinado com debug key.'
           fi
-          gh release upload graphics6 FlorestaViva-Graphics6.apk --clobber
+          gh release upload graphics7 FlorestaViva-Graphics7.apk --clobber
       - name: Publicar modelos 3D editáveis
         uses: actions/upload-artifact@v4
         with:
