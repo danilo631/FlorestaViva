@@ -1428,27 +1428,51 @@ Java_com_florestaviva_game_MainActivity_nativeInput(JNIEnv*,jclass,jfloat mx,jfl
 }
 extern "C" JNIEXPORT void JNICALL
 Java_com_florestaviva_game_MainActivity_nativeRender(JNIEnv*,jclass,jfloat delta){draw(delta);}
+extern "C" JNIEXPORT void JNICALL
+Java_com_florestaviva_game_MainActivity_nativeJump(JNIEnv*,jclass){
+    game.jumpQueued=true;
+}
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_florestaviva_game_MainActivity_nativeStatus(JNIEnv*env,jclass){
-    float minDist=std::numeric_limits<float>::max();
-    for(const Relic&r:game.relics)if(!r.picked)minDist=std::min(minDist,std::hypot(game.x-r.x,game.z-r.z));
-    char buff[240];
-    if(game.collected==RELIC_COUNT)std::snprintf(buff,sizeof(buff),"FLORESTA VIVA   |   %d/%d fragmentos   |   MISSAO CONCLUIDA!",game.collected,RELIC_COUNT);
-    else std::snprintf(buff,sizeof(buff),"FLORESTA VIVA | %d/%d fragmentos | %.0f m | Vento: %s",
-        game.collected,RELIC_COUNT,minDist,game.windVulkan?"Vulkan":"CPU");
+    float minDist=99999.f;
+    for(const Relic&r:game.relics)if(!r.picked)
+        minDist=std::min(minDist,std::hypot(game.x-r.x,game.z-r.z));
+    const int speciesSeen=__builtin_popcount(game.seenSpecies&7u);
+    char buff[300]{};
+    if(!game.reachedRiver){
+        std::snprintf(buff,sizeof(buff),"MISSAO 1: Encontre o rio (%.0f m) | Vento: %s",
+                      riverDistance(game.x,game.z),game.windVulkan?"Vulkan":"CPU");
+    }else if(game.jumps<3){
+        std::snprintf(buff,sizeof(buff),"MISSAO 2: Aprenda a saltar | %d/3 saltos | ARM64",
+                      game.jumps);
+    }else if(speciesSeen<3){
+        std::snprintf(buff,sizeof(buff),"MISSAO 3: Observe cervo, javali e raposa | %d/3 especies",
+                      speciesSeen);
+    }else if(game.collected<RELIC_COUNT){
+        std::snprintf(buff,sizeof(buff),"MISSAO 4: Fragmentos antigos | %d/%d | %.0f m",
+                      game.collected,RELIC_COUNT,minDist);
+    }else{
+        std::snprintf(buff,sizeof(buff),"FLORESTA VIVA | EXPLORACAO CONCLUIDA! 4/4 missoes");
+    }
     return env->NewStringUTF(buff);
 }
-
 extern "C" JNIEXPORT jfloatArray JNICALL
 Java_com_florestaviva_game_MainActivity_nativeMapData(JNIEnv*env,jclass){
-    float coords[3+RELIC_COUNT*2];
+    constexpr int RIVER_MAP_POINTS=21;
+    constexpr int COUNT=3+RELIC_COUNT*2+RIVER_MAP_POINTS*2;
+    float coords[COUNT]{};
     coords[0]=game.x;coords[1]=game.z;coords[2]=game.yaw;
     for(int i=0;i<RELIC_COUNT;i++){
         coords[3+2*i]=game.relics[i].picked?99999.f:game.relics[i].x;
         coords[4+2*i]=game.relics[i].picked?99999.f:game.relics[i].z;
     }
-    jfloatArray result=env->NewFloatArray(3+RELIC_COUNT*2);
-    if(result)env->SetFloatArrayRegion(result,0,3+RELIC_COUNT*2,coords);
+    for(int i=0;i<RIVER_MAP_POINTS;i++){
+        const float z=game.z+(i-10)*12.f;
+        coords[3+RELIC_COUNT*2+2*i]=riverCenter(z);
+        coords[4+RELIC_COUNT*2+2*i]=z;
+    }
+    jfloatArray result=env->NewFloatArray(COUNT);
+    if(result)env->SetFloatArrayRegion(result,0,COUNT,coords);
     return result;
 }
 
