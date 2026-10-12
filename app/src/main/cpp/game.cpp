@@ -191,6 +191,12 @@ float visibleSun(vec3 world,vec3 normal){
     return sum*.25;
 }
 float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+float noise2(vec2 p){
+    vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);
+    float a=mix(hash(i),hash(i+vec2(1,0)),f.x);
+    float b=mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x);
+    return mix(a,b,f.y);
+}
 float ggxSpec(vec3 N,vec3 V,vec3 L,float roughness){
     vec3 H=normalize(V+L);
     float nh=max(dot(N,H),0.0),nl=max(dot(N,L),0.01),nv=max(dot(N,V),0.01);
@@ -204,11 +210,17 @@ float ggxSpec(vec3 N,vec3 V,vec3 L,float roughness){
 void main(){
     vec3 N=normalize(vN),L=normalize(uSun),V=normalize(uEye-vP);
     float slope=1.0-N.y;
-    float grain=hash(floor(vP.xz*.125));
-    float dirt=clamp(slope*2.6+smoothstep(.49,.83,grain)*.34,0.0,.80);
-    float moss=clamp((1.0-dirt)*(.24+.25*sin(vP.x*.030+vP.z*.039)),0.0,.5);
+    // Continuous, multi-scale terrain macro noise removes obvious square tiles.
+    float biome=noise2(vP.xz*.044)*.67+noise2(vP.xz*.15)*.33;
+    float dirt=clamp(slope*2.35+smoothstep(.48,.78,biome)*.43,0.0,.82);
+    float damp=noise2(vP.xz*.027+vec2(18.3,6.2));
+    float moss=clamp((1.0-dirt)*smoothstep(.29,.82,damp)*.56,0.0,.54);
     vec2 guv=vUV*.16,duv=vUV*.19,muv=vUV*.17;
-    vec3 albedo=mix(texture(uGrass,guv).rgb,texture(uMoss,muv).rgb,moss);
+    vec3 groundColor=texture(uGrass,guv).rgb;
+    // Subtle second UV frequency helps hide repeated photographic motifs.
+    vec3 groundVariation=texture(uGrass,guv*.47+vec2(12.4,21.8)).rgb;
+    groundColor=mix(groundColor,groundVariation,.16+.10*damp);
+    vec3 albedo=mix(groundColor,texture(uMoss,muv).rgb,moss);
     albedo=mix(albedo,texture(uDirt,duv).rgb,dirt);
     vec2 gn=texture(uGrassNormal,guv).rg*2.0-1.0;
     vec2 mn=texture(uMossNormal,muv).rg*2.0-1.0;
@@ -225,6 +237,7 @@ void main(){
     float ambient=.22+.11*max(n.y,0.0);
     vec3 rgb=albedo*(ambient+.82*diffuse*uLight*(.23+.77*sunVisibility))+
              vec3(highlight*uLight*sunVisibility);
+    rgb*=mix(.87,1.09,noise2(vP.xz*.013+vec2(6.1,12.4)));
     rgb*=1.0-.12*smoothstep(.12,.7,slope);
     // Filmic, channel-wise highlight compression instead of harsh clip.
     rgb=(rgb*(2.51*rgb+.03))/(rgb*(2.43*rgb+.59)+.14);
@@ -392,6 +405,66 @@ void main(){
     Frag=vec4(sky,1.0);
 }
 )GLSL";
+static const char* POST_FS=R"GLSL(#version 300 es
+precision highp float;
+uniform sampler2D uColor;
+uniform sampler2D uDepth;
+uniform vec2 uResolution;
+uniform float uQuality;
+out vec4 Frag;
+float lum(vec3 c){return dot(c,vec3(.299,.587,.114));}
+float linearDepth(float d){
+    const float nearPlane=.11;
+    const float farPlane=310.0;
+    return 2.0*nearPlane*farPlane/
+        (farPlane+nearPlane-(2.0*d-1.0)*(farPlane-nearPlane));
+}
+void main(){
+    vec2 uv=gl_FragCoord.xy/uResolution;
+    vec2 t=1.0/uResolution;
+    vec3 current=texture(uColor,uv).rgb;
+    vec3 north=texture(uColor,uv+vec2(0,t.y)).rgb;
+    vec3 south=texture(uColor,uv-vec2(0,t.y)).rgb;
+    vec3 east=texture(uColor,uv+vec2(t.x,0)).rgb;
+    vec3 west=texture(uColor,uv-vec2(t.x,0)).rgb;
+    float center=lum(current),ln=lum(north),ls=lum(south),
+          le=lum(east),lw=lum(west);
+    // Mobile FXAA-style edge blending, no temporal ghost trails on moving leaves.
+    float variation=max(max(ln,ls),max(le,lw))-
+                    min(min(ln,ls),min(le,lw));
+    float edge=smoothstep(.045,.21,variation);
+    vec3 horizontal=(east+west)*.5,vertical=(north+south)*.5;
+    vec3 smoothColor=abs(ln-ls)>abs(le-lw)?horizontal:vertical;
+    vec3 rgb=mix(current,smoothColor,edge*.46);
+    // Short-radius screen-space contact shadow makes overlapping roots,
+    // rocks and understory read as connected layers rather than flat cutouts.
+    float depth0=texture(uDepth,uv).r;
+    if(uQuality>.5&&depth0<.9998){
+        float sceneDistance=linearDepth(depth0);
+        if(sceneDistance<44.0){
+            float occlusion=0.0;
+            for(int i=0;i<8;i++){
+                float a=float(i)*.785398163;
+                float radius=(i%2==0?2.0:3.75);
+                vec2 off=vec2(cos(a),sin(a))*radius*t;
+                float ds=linearDepth(texture(uDepth,clamp(uv+off,t,1.0-t)).r);
+                float difference=sceneDistance-ds;
+                occlusion+=smoothstep(.25,1.1,difference)*
+                           (1.0-smoothstep(1.9,5.2,difference));
+            }
+            float fade=1.0-smoothstep(20.0,44.0,sceneDistance);
+            rgb*=1.0-occlusion*.022*fade;
+        }
+    }
+    // Color grade after rendering, preserving the existing material PBR curve.
+    vec3 neutral=vec3(lum(rgb));
+    rgb=mix(neutral,rgb,.94);
+    rgb=clamp((rgb-.5)*1.07+.5,0.0,1.0);
+    float vignette=dot((uv-.5)*vec2(1.35,1.0),(uv-.5)*vec2(1.35,1.0));
+    rgb*=1.0-.085*smoothstep(.24,.58,vignette);
+    Frag=vec4(rgb,1.0);
+}
+)GLSL";
 static const char* TREE_DEPTH_VS=R"GLSL(#version 300 es
 precision highp float;
 layout(location=0) in vec3 aPos;
@@ -489,6 +562,9 @@ struct Relic {float x,z;bool picked=false;};
 struct State {
     int width=1280,height=720;
     GLuint terrainProg=0,instProg=0,shadowProg=0,skyProg=0,skyVao=0,treeDepthProg=0;
+    GLuint postProg=0,postFbo=0,postColor=0,postDepth=0;
+    int postWidth=0,postHeight=0;
+    bool postReady=false;
     GLuint treeDepthFbo=0,treeDepthTex=0;
     int depthMapSize=0;
     bool treeDepthReady=false;
@@ -800,12 +876,70 @@ static void bindSunShadow(GLuint programId,int slot){
     glUniform1f(glGetUniformLocation(programId,"uShadowTexel"),1.f/float(game.depthMapSize));
 }
 
+static bool ensurePostFrameBuffer(){
+    const int w=game.width,h=game.height;
+    if(game.postReady&&game.postWidth==w&&game.postHeight==h)return true;
+    if(game.postFbo)glDeleteFramebuffers(1,&game.postFbo);
+    if(game.postColor)glDeleteTextures(1,&game.postColor);
+    if(game.postDepth)glDeleteTextures(1,&game.postDepth);
+    game.postFbo=game.postColor=game.postDepth=0;
+    game.postReady=false;
+    if(w<=0||h<=0||w>4096||h>4096||!game.postProg)return false;
+    glGenTextures(1,&game.postColor);
+    glBindTexture(GL_TEXTURE_2D,game.postColor);
+    glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,w,h,0,GL_RGBA,GL_UNSIGNED_BYTE,nullptr);
+    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
+    glGenTextures(1,&game.postDepth);
+    glBindTexture(GL_TEXTURE_2D,game.postDepth);
+    glTexImage2D(GL_TEXTURE_2D,0,GL_DEPTH_COMPONENT24,w,h,0,
+                 GL_DEPTH_COMPONENT,GL_UNSIGNED_INT,nullptr);
+    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_COMPARE_MODE,GL_NONE);
+    glGenFramebuffers(1,&game.postFbo);
+    glBindFramebuffer(GL_FRAMEBUFFER,game.postFbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,game.postColor,0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER,GL_DEPTH_ATTACHMENT,GL_TEXTURE_2D,game.postDepth,0);
+    const bool ok=glCheckFramebufferStatus(GL_FRAMEBUFFER)==GL_FRAMEBUFFER_COMPLETE;
+    glBindFramebuffer(GL_FRAMEBUFFER,0);
+    game.postWidth=w;game.postHeight=h;
+    game.postReady=ok;
+    if(!ok)LOGE("Postprocessing FBO unavailable: direct rendering fallback");
+    return ok;
+}
+static void presentPostFrame(){
+    glBindFramebuffer(GL_FRAMEBUFFER,0);
+    glViewport(0,0,game.width,game.height);
+    glDisable(GL_BLEND);
+    glDisable(GL_DEPTH_TEST);
+    glDepthMask(GL_FALSE);
+    glUseProgram(game.postProg);
+    glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_2D,game.postColor);
+    glUniform1i(glGetUniformLocation(game.postProg,"uColor"),0);
+    glActiveTexture(GL_TEXTURE1);glBindTexture(GL_TEXTURE_2D,game.postDepth);
+    glUniform1i(glGetUniformLocation(game.postProg,"uDepth"),1);
+    glUniform2f(glGetUniformLocation(game.postProg,"uResolution"),
+                float(game.width),float(game.height));
+    glUniform1f(glGetUniformLocation(game.postProg,"uQuality"),
+                game.graphicsQuality==2?2.0f:0.0f);
+    glBindVertexArray(game.skyVao);
+    glDrawArrays(GL_TRIANGLES,0,3);
+    glBindVertexArray(0);
+    glDepthMask(GL_TRUE);
+}
 static void draw(float dt){
     if(!game.ready)return;
     update(dt);streamWorld();
     if(game.graphicsQuality>0&&game.treeDepthProg)
         castForestShadows(game.batches.broad,game.batches.pine,game.graphicsQuality);
     else game.treeDepthReady=false;
+    const bool usePost=game.graphicsQuality>0&&ensurePostFrameBuffer();
+    glBindFramebuffer(GL_FRAMEBUFFER,usePost?game.postFbo:0);
     glViewport(0,0,game.width,game.height);
     // Soft daytime colors, with a slowly cycling evening phase.
     float cycle=.5f+.5f*std::sin(game.t*.0105f+.85f);
@@ -945,6 +1079,7 @@ static void draw(float dt){
         material(2,0,0,2.1f,game.t*.75f);
         instDraw(game.crystal,floating);
     }
+    if(usePost)presentPostFrame();
 }
 static void initialize(){
     // Called with a current, potentially new, GLES context.
@@ -954,6 +1089,9 @@ static void initialize(){
     game.instProg=program(INST_VS,INST_FS);
     game.shadowProg=program(SHADOW_VS,SHADOW_FS);
     game.skyProg=program(SKY_VS,SKY_FS);
+    game.postProg=program(SKY_VS,POST_FS);
+    game.postFbo=game.postColor=game.postDepth=0;
+    game.postReady=false;
     game.treeDepthProg=program(TREE_DEPTH_VS,TREE_DEPTH_FS);
     game.treeDepthReady=false;
     game.treeDepthFbo=game.treeDepthTex=0;
@@ -983,7 +1121,7 @@ static void initialize(){
     game.windTex=createTexture();
     game.ready=true;
     glDisable(GL_CULL_FACE);
-    LOGE("Engine ready: Graphics 5 dense undergrowth, unified foliage atlas and Vulkan compute wind");
+    LOGE("Engine ready: Graphics 7 scanned foliage, mobile post FXAA / ambient occlusion");
 }
 extern "C" JNIEXPORT void JNICALL
 Java_com_florestaviva_game_MainActivity_nativeCreate(JNIEnv*,jclass){initialize();}
