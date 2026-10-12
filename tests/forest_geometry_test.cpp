@@ -45,6 +45,8 @@ void ellipsoid(ModelData& m,Vec3 center,Vec3 scale,int rings=8,int sectors=12){
 #include "../app/src/main/cpp/forest_tree_mesh.hpp"
 #include "../app/src/main/cpp/forest_undergrowth.hpp"
 #include "../app/src/main/cpp/forest_leaf_litter.hpp"
+#include "../app/src/main/cpp/forest_fauna.hpp"
+#include "../app/src/main/cpp/forest_biome_props.hpp"
 void check(const ModelData& m,const char* name){
     if(m.i.empty()||m.v.empty())throw std::runtime_error(std::string(name)+" empty");
     if(m.i.size()%3)throw std::runtime_error(std::string(name)+" nontriangles");
@@ -151,6 +153,15 @@ int main(){
         check(litter,"fallen leaves");
         if(litter.i.size()/3<75)throw std::runtime_error("Leaf litter poly count too low");
         std::cout<<"scanned atlas litter triangles="<<litter.i.size()/3<<"\n";
+        ModelData deer=forestBuildDeer(),boar=forestBuildBoar(),fox=forestBuildFox();
+        check(deer,"deer");check(boar,"boar");check(fox,"fox");
+        for(const auto& animal:{&deer,&boar,&fox})
+            if(animal->i.size()/3<300)throw std::runtime_error("Wildlife mesh too small");
+        check(makeRiverReeds(),"river reeds");
+        check(makeMeadowFlowers(),"meadow flowers");
+        std::cout<<"wildlife triangles deer="<<deer.i.size()/3
+                 <<" boar="<<boar.i.size()/3
+                 <<" fox="<<fox.i.size()/3<<"\n";
         auto rock=forestRockMesh();check(rock,"rock");
         auto log=forestFallenLog();check(log,"fallenLog");
         if(total<12000)throw std::runtime_error("tree meshes unexpectedly low-poly");
