@@ -67,6 +67,12 @@ jobs:
           assert Image.open(base/"pine_normal.png").mode=="RGBA"
           PY
           python -c "from PIL import Image; a='app/src/main/assets/'; assert Image.open(a+'leaves_atlas.png').size==(1024,1024)"
+      - name: Integrar materiais fotográficos PBR CC0
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tools/photogrammetry_materials.py --strict
+          cat app/src/main/assets/photogrammetry_manifest.txt
       - name: Compilar shaders Vulkan de teste
         shell: bash
         run: |
