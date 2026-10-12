@@ -44,6 +44,7 @@ void ellipsoid(ModelData& m,Vec3 center,Vec3 scale,int rings=8,int sectors=12){
 }
 #include "../app/src/main/cpp/forest_tree_mesh.hpp"
 #include "../app/src/main/cpp/forest_undergrowth.hpp"
+#include "../app/src/main/cpp/forest_leaf_litter.hpp"
 void check(const ModelData& m,const char* name){
     if(m.i.empty()||m.v.empty())throw std::runtime_error(std::string(name)+" empty");
     if(m.i.size()%3)throw std::runtime_error(std::string(name)+" nontriangles");
@@ -146,6 +147,10 @@ int main(){
                  <<" shrub="<<details.shrub.i.size()/3
                  <<" fern="<<details.fern.i.size()/3
                  <<" seedlings="<<details.broadGroundPlant.i.size()/3<<"\n";
+        auto litter=forestLeafLitterPatch();
+        check(litter,"fallen leaves");
+        if(litter.i.size()/3<75)throw std::runtime_error("Leaf litter poly count too low");
+        std::cout<<"scanned atlas litter triangles="<<litter.i.size()/3<<"\n";
         auto rock=forestRockMesh();check(rock,"rock");
         auto log=forestFallenLog();check(log,"fallenLog");
         if(total<12000)throw std::runtime_error("tree meshes unexpectedly low-poly");
