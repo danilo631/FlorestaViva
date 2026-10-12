@@ -2,7 +2,7 @@ name: Gerar APK Android
 on:
   workflow_dispatch:
   push:
-    branches: [main, master, graphics3-atlas-vulkan-sky, graphics4-procedural-aaa-vegetation, graphics5-dense-vegetation-vulkan-compute, graphics6-shadows-material-rework, graphics8-scanned-foliage-postfx, graphics8-rivers-wildlife-quests-arm64]
+    branches: [main, master, graphics3-atlas-vulkan-sky, graphics4-procedural-aaa-vegetation, graphics5-dense-vegetation-vulkan-compute, graphics6-shadows-material-rework, graphics7-scanned-foliage-postfx, graphics8-rivers-wildlife-quests-arm64]
   pull_request:
     branches: [main]
 permissions:
@@ -89,7 +89,9 @@ jobs:
           assert Image.open(a/'wildlife_fur.png').size == (1536,512)
           PY
       - name: Preparar prévia dos materiais fotografados
-        run: python tools/material_preview.py
+        run: |
+          python tools/material_preview.py
+          cp build/Graphics7_Materials_Preview.jpg build/Graphics8_Materials_Preview.jpg
       - name: Compilar shaders Vulkan de teste
         shell: bash
         run: |
@@ -181,14 +183,14 @@ jobs:
           set -euo pipefail
           cp app/build/outputs/apk/debug/app-debug.apk FlorestaViva-Graphics8.apk
           if ! gh release view graphics8 >/dev/null 2>&1; then
-            gh release create graphics8 --title 'Floresta Viva Graphics 8' --notes 'APK completo: materiais CC0 fotografados, sombras direcionais e vegetação procedural. Android exclusivamente arm64-v8a. Build de testes assinado com debug key.'
+            gh release create graphics8 --title 'Floresta Viva Graphics 8' --notes 'Graphics 8: rios, fauna com 3 especies, 4 biomas, 4 missoes e salto. APK com assets embutidos, exclusivo Android ARM64. Assinado com chave debug temporaria: a atualizacao sobre uma versao anterior pode exigir desinstalacao, apagando o progresso.'
           fi
           gh release upload graphics8 FlorestaViva-Graphics8.apk --clobber
       - name: Publicar comparação dos materiais
         uses: actions/upload-artifact@v4
         with:
-          name: FlorestaViva-Graphics7-Material-Preview
-          path: build/Graphics7_Materials_Preview.jpg
+          name: FlorestaViva-Graphics8-Material-Preview
+          path: build/Graphics8_Materials_Preview.jpg
           if-no-files-found: error
       - name: Publicar modelos 3D editáveis
         uses: actions/upload-artifact@v4
