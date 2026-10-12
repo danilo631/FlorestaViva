@@ -50,6 +50,7 @@ void ellipsoid(ModelData& m,Vec3 center,Vec3 scale,int rings=8,int sectors=12){
 #include "../app/src/main/cpp/forest_fauna.hpp"
 #include "../app/src/main/cpp/forest_biome_props.hpp"
 #include "../app/src/main/cpp/forest_floor_details.hpp"
+#include "../app/src/main/cpp/forest_meshlets.hpp"
 void check(const ModelData& m,const char* name){
     if(m.i.empty()||m.v.empty())throw std::runtime_error(std::string(name)+" empty");
     if(m.i.size()%3)throw std::runtime_error(std::string(name)+" nontriangles");
@@ -122,6 +123,10 @@ int main(){
         const fs::path output=exportDir?fs::path(exportDir):fs::path();
         if(exportDir){fs::create_directories(output);exportMaterials(output);}
         size_t total=0;
+        std::ofstream meshletsJSON;
+        if(exportDir)meshletsJSON.open(output/"meshlet_lod_index.json");
+        if(meshletsJSON)meshletsJSON<<"{\n  \"renderer\":\"GLES3 LOD metadata, not Nanite\",\n  \"clusters\":[\n";
+        int records=0;
         for(int i=0;i<5;i++){
             auto tree=forestBuildTree(i);
             check(tree.woodHigh,"woodHi");
@@ -131,10 +136,47 @@ int main(){
             check(tree.foliageFar,"foliageFar");
             if(tree.woodHigh.i.size()<=tree.woodMid.i.size())
                 throw std::runtime_error("wood LOD not simplified");
+            size_t pivotEnabled=0;
+            for(const auto &v:tree.foliageHigh.v){
+                if(v.bend>0.f)pivotEnabled++;
+            }
+            if(pivotEnabled<tree.foliageHigh.v.size()/2)
+                throw std::runtime_error("Pivot metadata not encoded in foliage vertices");
+            if(tree.woodHigh.i.size()%3)throw std::runtime_error("tree mesh invalid");
             if(tree.foliageHigh.i.size()<=tree.foliageMid.i.size())
                 throw std::runtime_error("leaf LOD not simplified");
             if(exportDir){
                 for(int lod=0;lod<3;lod++)exportLod(output,tree,i,lod);
+            }
+            for(int lod=0;lod<3;lod++){
+                const ModelData &wood=lod==0?tree.woodHigh:tree.woodMid;
+                const ModelData &leaves=lod==0?tree.foliageHigh:
+                                     (lod==1?tree.foliageMid:tree.foliageFar);
+                auto woodClusters=forestClusterMesh(wood);
+                auto leafClusters=forestClusterMesh(leaves);
+                auto verify=[&](const ModelData& model,
+                                const std::vector<ForestMeshlet>& list){
+                    size_t counted=0;
+                    for(const auto& cluster:list){
+                        if(cluster.triangleCount>126||cluster.uniqueVertices>64
+                           ||cluster.uniqueVertices<3||!std::isfinite(cluster.radius)
+                           ||cluster.radius<0)
+                            throw std::runtime_error("invalid meshlet topology/bounds");
+                        if(cluster.firstTriangle!=counted)
+                            throw std::runtime_error("nonconsecutive meshlet indices");
+                        counted+=cluster.triangleCount;
+                    }
+                    if(counted!=model.i.size()/3)
+                        throw std::runtime_error("meshlet coverage mismatch");
+                };
+                verify(wood,woodClusters);verify(leaves,leafClusters);
+                if(meshletsJSON){
+                    if(records++)meshletsJSON<<",\n";
+                    meshletsJSON<<"    {\"species\":"<<i<<",\"lod\":"<<lod
+                         <<",\"wood_meshlets\":"<<woodClusters.size()
+                         <<",\"foliage_meshlets\":"<<leafClusters.size()
+                         <<",\"triangles\":"<<(wood.i.size()+leaves.i.size())/3<<"}";
+                }
             }
             size_t triangles=(tree.woodHigh.i.size()+tree.foliageHigh.i.size())/3;
             total+=triangles;
@@ -142,6 +184,7 @@ int main(){
                      <<" foliage="<<tree.foliageHigh.i.size()/3
                      <<" far="<<tree.foliageFar.i.size()/3<<"\n";
         }
+        if(meshletsJSON)meshletsJSON<<"\n  ]\n}\n";
         auto details=buildForestUnderstory();
         check(details.twig,"undergrowth twig branches");
         check(details.shrub,"detailed shrub leaves");
