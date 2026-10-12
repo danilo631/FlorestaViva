@@ -35,6 +35,7 @@ public class MainActivity extends Activity {
                                           boolean running, boolean collect);
     public static native void nativeRender(float frameTime);
     public static native void nativeJump();
+    public static native float[] nativeMetrics();
     public static native String nativeStatus();
     public static native float[] nativeMapData();
     public static native String nativeSave();
@@ -43,6 +44,7 @@ public class MainActivity extends Activity {
     private GLSurfaceView surface;
     private InputOverlay overlay;
     private TextView status;
+    private TextView debugOverlay;
     private Button qualityButton;
     private volatile int graphicsQuality=1;
 
@@ -67,6 +69,13 @@ public class MainActivity extends Activity {
         surface.setRenderMode(GLSurfaceView.RENDERMODE_CONTINUOUSLY);
 
         overlay = new InputOverlay();
+        debugOverlay = new TextView(this);
+        debugOverlay.setTextColor(0xFFE2EBCB);
+        debugOverlay.setTextSize(11);
+        debugOverlay.setPadding(dp(6),dp(3),dp(6),dp(3));
+        debugOverlay.setBackgroundColor(0x88091412);
+        debugOverlay.setTypeface(Typeface.MONOSPACE);
+        debugOverlay.setText("FPS -- | CPU -- ms | DC -- | TRI -- | TEX -- MiB");
         status = new TextView(this);
         status.setText("FLORESTA VIVA   |   Carregando a floresta...");
         status.setTextColor(Color.WHITE);
@@ -80,6 +89,11 @@ public class MainActivity extends Activity {
         FrameLayout layout = new FrameLayout(this);
         layout.addView(surface, new FrameLayout.LayoutParams(-1,-1));
         layout.addView(overlay, new FrameLayout.LayoutParams(-1,-1));
+        FrameLayout.LayoutParams debugLayout =
+            new FrameLayout.LayoutParams(-2,-2,Gravity.TOP | Gravity.LEFT);
+        debugLayout.leftMargin=dp(7);
+        debugLayout.topMargin=dp(182);
+        layout.addView(debugOverlay,debugLayout);
         FrameLayout.LayoutParams header = new FrameLayout.LayoutParams(-2,-2,Gravity.TOP | Gravity.CENTER_HORIZONTAL);
         header.topMargin = dp(10);
         layout.addView(status, header);
@@ -176,7 +190,16 @@ public class MainActivity extends Activity {
             if((frames%24)==0){
                 String line=nativeStatus();
                 float[] map=nativeMapData();
-                runOnUiThread(()->{status.setText(line);overlay.setMap(map);});
+                float[] metrics=nativeMetrics();
+                runOnUiThread(()->{
+                    status.setText(line);
+                    overlay.setMap(map);
+                    if(metrics!=null && metrics.length==5){
+                        debugOverlay.setText(String.format(java.util.Locale.US,
+                          "FPS %.1f | CPU %.1f ms | DC %.0f | TRI %.0f | TEX %.1f MiB",
+                          metrics[0],metrics[1],metrics[2],metrics[3],metrics[4]));
+                    }
+                });
             }
         }
     }

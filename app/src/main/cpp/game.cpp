@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <chrono>
 #include <memory>
 #include <limits>
 #include <random>
@@ -727,6 +728,7 @@ struct State {
     bool treeDepthReady=false;
     Mat4 sunShadowMatrix{};
     GLuint tex[33]{};
+    uint64_t texBytes[33]{};
     GLuint riverProg=0;
     Mesh wildlifeMeshes[3],reedsMesh,flowersMesh;
     std::vector<ForestAnimal> wildlife;
@@ -754,6 +756,22 @@ struct State {
     bool ready=false;
 };
 static State game;
+struct ForestRenderMetrics {
+    uint32_t drawCalls=0;
+    uint64_t triangles=0,textureBytes=0;
+    float fps=0.f,cpuSubmissionMs=0.f;
+    float smoothFps=0.f,smoothCpuMs=0.f;
+    uint32_t frames=0;
+};
+// Counts actual GLES draw calls, including tree shadow passes and postfx;
+// DOES NOT estimate GPU time (that needs GL_EXT_disjoint_timer_query).
+static ForestRenderMetrics debugMetrics;
+static void countDraw(GLsizei indexCount,uint32_t instances=1){
+    debugMetrics.drawCalls++;
+    debugMetrics.triangles+=uint64_t(std::max(indexCount,0))/3*
+                            uint64_t(instances);
+}
+
 static int64_t key(int x,int z){return int64_t((uint64_t(uint32_t(x))<<32)|uint32_t(z));}
 static void freeMesh(Mesh &m){
     if(m.ebo)glDeleteBuffers(1,&m.ebo);
@@ -940,6 +958,7 @@ static void instDraw(const Mesh& mesh,const std::vector<Instance>& instances){
     glBufferData(GL_ARRAY_BUFFER,GLsizeiptr(instances.size()*sizeof(Instance)),instances.data(),GL_STREAM_DRAW);
     glBindVertexArray(mesh.vao);
     glDrawElementsInstanced(GL_TRIANGLES,mesh.count,GL_UNSIGNED_INT,nullptr,GLsizei(instances.size()));
+    countDraw(mesh.count,uint32_t(instances.size()));
     glBindVertexArray(0);
 }
 static void material(int index,float cutout,float wind,float emissive=0.f,float spin=0.f){
@@ -1292,11 +1311,15 @@ static void presentPostFrame(Vec3 eye){
     }
     glBindVertexArray(game.skyVao);
     glDrawArrays(GL_TRIANGLES,0,3);
+    countDraw(3);
     glBindVertexArray(0);
     glDepthMask(GL_TRUE);
 }
 static void draw(float dt){
     if(!game.ready)return;
+    const auto cpuStart=std::chrono::steady_clock::now();
+    debugMetrics.drawCalls=0;
+    debugMetrics.triangles=0;
     update(dt);streamWorld();
     if(game.graphicsQuality>0&&game.treeDepthProg)
         castForestShadows(game.batches.broad,game.batches.pine,game.graphicsQuality);
@@ -1319,7 +1342,9 @@ static void draw(float dt){
         glUniform1f(glGetUniformLocation(game.skyProg,"uSunPower"),light);
         set3(game.skyProg,"uSunDir",normalize({.62f,.87f,.33f}));
         set3(game.skyProg,"uHaze",fog);
-        glBindVertexArray(game.skyVao);glDrawArrays(GL_TRIANGLES,0,3);glBindVertexArray(0);
+        glBindVertexArray(game.skyVao);glDrawArrays(GL_TRIANGLES,0,3);
+        countDraw(3);
+        glBindVertexArray(0);
         glDepthMask(GL_TRUE);
     }
     Vec3 eye{game.x,height(game.x,game.z)+game.feetOffset+1.72f,game.z};
@@ -1353,6 +1378,7 @@ static void draw(float dt){
     for(const auto& pair:game.chunks){const Mesh& m=pair.second.terrain;
         if(!forestChunkVisible(vp,pair.first))continue;
         glBindVertexArray(m.vao);glDrawElements(GL_TRIANGLES,m.count,GL_UNSIGNED_INT,nullptr);
+        countDraw(m.count);
     }
     glBindVertexArray(0);
     // The circular placeholder shadow is only used when depth maps are unavailable.
@@ -1549,12 +1575,29 @@ static void draw(float dt){
             if(!water.count || !forestChunkVisible(vp,pair.first))continue;
             glBindVertexArray(water.vao);
             glDrawElements(GL_TRIANGLES,water.count,GL_UNSIGNED_INT,nullptr);
+            countDraw(water.count);
         }
         glBindVertexArray(0);
         glDepthMask(GL_TRUE);
         glDisable(GL_BLEND);
     }
     if(usePost)presentPostFrame(eye);
+    const auto cpuEnd=std::chrono::steady_clock::now();
+    debugMetrics.cpuSubmissionMs=std::chrono::duration<float,std::milli>(cpuEnd-cpuStart).count();
+    const float alpha=.045f;
+    const float instantaneousFps=dt>.001f?1.f/dt:0.f;
+    if(instantaneousFps>0.f){
+        debugMetrics.smoothFps=debugMetrics.smoothFps<=0.f?instantaneousFps:
+                debugMetrics.smoothFps*(1-alpha)+instantaneousFps*alpha;
+    }
+    debugMetrics.smoothCpuMs=debugMetrics.smoothCpuMs<=0.f?debugMetrics.cpuSubmissionMs:
+                debugMetrics.smoothCpuMs*(1-alpha)+debugMetrics.cpuSubmissionMs*alpha;
+    debugMetrics.fps=instantaneousFps;
+    if(++debugMetrics.frames%240==0)
+        LOGE("METRICS fps=%.1f cpu_submission_ms=%.2f draws=%u tris=%llu texMiB=%.1f (GPU time unavailable)",
+          debugMetrics.smoothFps,debugMetrics.smoothCpuMs,debugMetrics.drawCalls,
+          (unsigned long long)debugMetrics.triangles,
+          double(debugMetrics.textureBytes)/(1024.*1024.));
 }
 static void initialize(){
     // Called with a current, potentially new, GLES context.
@@ -1704,6 +1747,10 @@ Java_com_florestaviva_game_MainActivity_nativeUploadTexture(JNIEnv*env,jclass,ji
     }
     AndroidBitmap_unlockPixels(env,bitmap);
     glGenerateMipmap(GL_TEXTURE_2D);
+    const uint64_t old=game.texBytes[index];
+    const uint64_t estimate=uint64_t(info.width)*uint64_t(info.height)*4u*4u/3u;
+    game.texBytes[index]=estimate;
+    debugMetrics.textureBytes=debugMetrics.textureBytes-old+estimate;
     static bool checked=false, anisotropy=false;
     if(!checked){
         GLint extensionCount=0;
@@ -1726,6 +1773,18 @@ Java_com_florestaviva_game_MainActivity_nativeInput(JNIEnv*,jclass,jfloat mx,jfl
 }
 extern "C" JNIEXPORT void JNICALL
 Java_com_florestaviva_game_MainActivity_nativeRender(JNIEnv*,jclass,jfloat delta){draw(delta);}
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_florestaviva_game_MainActivity_nativeMetrics(JNIEnv*env,jclass){
+    // GL render-thread only. No GPU sync; values are CPU-side counts/estimates.
+    const float values[]={
+        debugMetrics.smoothFps,debugMetrics.smoothCpuMs,
+        float(debugMetrics.drawCalls),float(debugMetrics.triangles),
+        float(double(debugMetrics.textureBytes)/(1024.*1024.))
+    };
+    jfloatArray result=env->NewFloatArray(5);
+    if(result)env->SetFloatArrayRegion(result,0,5,values);
+    return result;
+}
 extern "C" JNIEXPORT void JNICALL
 Java_com_florestaviva_game_MainActivity_nativeJump(JNIEnv*,jclass){
     game.jumpQueued=true;
