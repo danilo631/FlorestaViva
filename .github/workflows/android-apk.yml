@@ -85,6 +85,13 @@ jobs:
           "$GLSLC" shaders/foliage.vert -o app/src/main/assets/vulkan/foliage.vert.spv
           "$GLSLC" shaders/foliage.frag -o app/src/main/assets/vulkan/foliage.frag.spv
           "$GLSLC" shaders/wind.comp -o app/src/main/assets/vulkan/wind.comp.spv
+      - name: Validar todos os shaders OpenGL ES
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq glslang-tools
+          python tools/validate_gles_shaders.py
       - name: Testar geometria nativa das árvores
         shell: bash
         run: |
