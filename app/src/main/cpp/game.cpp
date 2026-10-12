@@ -97,20 +97,6 @@ struct ModelData {
         triangle(k,k+1,k+2);triangle(k,k+2,k+3);
     }
 };
-static void cylinder(ModelData& m,Vec3 from,Vec3 to,float bottomRadius,float topRadius,int sectors){
-    Vec3 axis=normalize(to-from);
-    Vec3 tangent=normalize(cross(axis,std::fabs(axis.y)>.9f?Vec3{1,0,0}:Vec3{0,1,0}));
-    Vec3 bit=cross(axis,tangent);
-    uint32_t k=uint32_t(m.v.size());
-    for(int j=0;j<=sectors;j++){
-        float a=2*PI*float(j)/float(sectors);
-        Vec3 radial=tangent*std::cos(a)+bit*std::sin(a);
-        Vec3 p=from+radial*bottomRadius,q=to+radial*topRadius;
-        m.v.push_back({p.x,p.y,p.z,radial.x,radial.y,radial.z,float(j)/sectors,1.f});
-        m.v.push_back({q.x,q.y,q.z,radial.x,radial.y,radial.z,float(j)/sectors,0.f});
-        if(j<sectors){uint32_t t=k+2*j; m.triangle(t,t+2,t+1);m.triangle(t+1,t+2,t+3);}
-    }
-}
 static void ellipsoid(ModelData& m,Vec3 c,Vec3 scale,int rings=8,int segments=12){
     uint32_t k=uint32_t(m.v.size());
     for(int r=0;r<=rings;r++){
@@ -127,88 +113,6 @@ static void ellipsoid(ModelData& m,Vec3 c,Vec3 scale,int rings=8,int segments=12
         uint32_t a=k+r*(segments+1)+j,b=a+segments+1;
         m.triangle(a,b,a+1);m.triangle(a+1,b,b+1);
     }
-}
-static void cone(ModelData& m,float y0,float y1,float rad,int segments){
-    uint32_t k=uint32_t(m.v.size());
-    for(int j=0;j<=segments;j++){
-        float t=float(j)/segments*2*PI,c=std::cos(t),s=std::sin(t);
-        Vec3 n=normalize({c,rad/(y1-y0),s});
-        m.v.push_back({c*rad,y0,s*rad,n.x,n.y,n.z,float(j)/segments*2,1});
-        m.v.push_back({0,y1,0,n.x,n.y,n.z,float(j)/segments*2,0});
-        if(j<segments){uint32_t a=k+j*2;m.triangle(a,a+2,a+1);}
-    }
-}
-static ModelData makeTrunk(bool pine){
-    ModelData m;
-    cylinder(m,{0,0,0},{.08f,pine?7.1f:6.5f,0},pine?.27f:.35f,.07f,12);
-    if(!pine) {
-        for(int i=0;i<5;i++) {
-            float a=2.f*PI*float(i)/5.f;
-            Vec3 foot{.8f*std::cos(a),-.03f,.8f*std::sin(a)};
-            cylinder(m,{0,.47f,0},foot,.16f,.035f,5);
-        }
-    }
-    if(!pine){
-        cylinder(m,{0,3.4f,0},{1.7f,5.9f,.55f},.14f,.03f,6);
-        cylinder(m,{0,4.0f,0},{-1.4f,6.5f,-.7f},.13f,.025f,6);
-        cylinder(m,{.05f,4.8f,0},{.9f,7.4f,-1.2f},.10f,.025f,5);
-        cylinder(m,{-.02f,4.4f,0},{-1.0f,6.0f,1.4f},.12f,.025f,5);
-        cylinder(m,{0,5.2f,.12f},{-.65f,7.5f,.98f},.08f,.018f,5);
-        cylinder(m,{.08f,3.75f,-.03f},{1.05f,5.1f,-1.8f},.095f,.016f,5);
-    }
-    return m;
-}
-static ModelData makeBroadLeaves(){
-    ModelData m;
-    ellipsoid(m,{0,7.25f,0},{2.2f,1.9f,2.1f});
-    ellipsoid(m,{1.35f,6.6f,.5f},{1.65f,1.5f,1.55f});
-    ellipsoid(m,{-1.25f,6.6f,-.4f},{1.7f,1.45f,1.6f});
-    ellipsoid(m,{.15f,6.5f,-1.3f},{1.55f,1.5f,1.65f});
-    ellipsoid(m,{-.4f,7.65f,.95f},{1.5f,1.5f,1.35f});
-    ellipsoid(m,{1.5f,5.95f,-.8f},{1.05f,.98f,1.1f},6,10);
-    ellipsoid(m,{-1.8f,5.8f,1.f},{1.1f,.95f,1.05f},6,10);
-    return m;
-}
-static ModelData makeLeafDetail(){
-    // Botanical leaf cards share a single texture atlas instead of drawing huge
-    // translucent canopy billboards. Geometry is deterministic and instanced.
-    // Every leaf card maps to ONE 4x4 atlas cell with transparent borders.
-    ModelData m;
-    std::mt19937 rng(123984u);
-    std::uniform_real_distribution<float> random(0.f,1.f);
-    for(int i=0;i<110;i++){
-        float angle=random(rng)*2.f*PI;
-        float polar=random(rng)*2.f-1.f;
-        float radial=std::sqrt(std::max(0.f,1.f-polar*polar));
-        float radius=1.55f+random(rng)*1.12f;
-        Vec3 center{std::cos(angle)*radial*radius,7.0f+polar*1.75f,std::sin(angle)*radial*radius};
-        float scale=.32f+random(rng)*.42f;
-        Vec3 right{std::cos(angle+PI*.5f)*scale,0,std::sin(angle+PI*.5f)*scale};
-        Vec3 up{0,scale*1.35f,0};
-        // Angled leaflets are not uniformly vertical and have broken silhouettes.
-        up=up+Vec3{std::cos(angle)*scale*.35f,0,std::sin(angle)*scale*.35f};
-        Vec3 normal=normalize(cross(right,up));
-        int cell=int(random(rng)*15.999f);
-        float u0=(float(cell%4)+.025f)*.25f,u1=(float(cell%4)+.975f)*.25f;
-        float v0=(float(cell/4)+.025f)*.25f,v1=(float(cell/4)+.975f)*.25f;
-        Vec3 p0=center-right-up*.55f,p1=center+right-up*.55f;
-        Vec3 p2=center+right+up*.55f,p3=center-right+up*.55f;
-        uint32_t base=uint32_t(m.v.size());
-        m.v.push_back({p0.x,p0.y,p0.z,normal.x,normal.y,normal.z,u0,v1});
-        m.v.push_back({p1.x,p1.y,p1.z,normal.x,normal.y,normal.z,u1,v1});
-        m.v.push_back({p2.x,p2.y,p2.z,normal.x,normal.y,normal.z,u1,v0});
-        m.v.push_back({p3.x,p3.y,p3.z,normal.x,normal.y,normal.z,u0,v0});
-        m.triangle(base,base+1,base+2);m.triangle(base,base+2,base+3);
-    }
-    return m;
-}
-static ModelData makePineLeaves(){
-    ModelData m;
-    cone(m,2.4f,5.9f,2.25f,12);
-    cone(m,4.0f,7.15f,1.8f,12);
-    cone(m,5.45f,8.35f,1.23f,14);
-    cone(m,6.65f,8.85f,.80f,14);
-    return m;
 }
 #include "forest_tree_mesh.hpp"
 
