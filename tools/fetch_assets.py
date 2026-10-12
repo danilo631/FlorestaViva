@@ -52,8 +52,22 @@ def metadata(asset):
     return data
 
 def source(files,kind,resolution):
-    # Poly Haven currently has multiple nested variants and IDs; discover
-    # by the provider filename, not assumptions about the top-level map keys.
+    # Provider map names and filenames are not uniformly spelled:
+    # Forest Leaves 02 uses 'Diffuse' whereas Forest Ground uses 'diff'.
+    aliases={"diff":("Diffuse","diff","diffuse"),
+             "nor_gl":("nor_gl","NormalGL","normal_gl"),
+             "rough":("Rough","rough","roughness"),
+             "ao":("AO","ao","ambient_occlusion"),
+             "disp":("Displacement","disp","height")}
+    for alias in aliases.get(kind,(kind,)):
+        variants=files.get(alias)
+        if not isinstance(variants,dict):continue
+        chosen=variants.get(resolution)
+        if isinstance(chosen,dict):
+            for fmt in ("jpg","png","jpeg"):
+                if isinstance(chosen.get(fmt),dict) and chosen[fmt].get("url"):
+                    return chosen[fmt]
+    # Secondary fallback: nested variants and provider filenames.
     def walk(node):
         if isinstance(node,dict):
             if isinstance(node.get("url"),str):
