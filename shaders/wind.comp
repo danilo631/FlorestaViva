@@ -1,0 +1,34 @@
+#version 450
+// Precomputed, repeatable 2-D turbulent wind field with four channels.
+// Actual GPU compute Vulkan pipeline, not merely a vkCreateInstance probe.
+layout(local_size_x=8,local_size_y=8,local_size_z=1) in;
+layout(set=0,binding=0,std430) writeonly buffer Field{uint packedRGBA[];} dest;
+uint hash(uint x) {
+    x ^= x>>16; x*=0x7feb352du;
+    x ^= x>>15; x*=0x846ca68bu;
+    return x^(x>>16);
+}
+float rand2(ivec2 p){
+    return float(hash(uint(p.x)*73856093u^uint(p.y)*19349663u^0x92a340u)&0xffffffu)/16777215.0;
+}
+float noise2(vec2 p){
+    ivec2 ip=ivec2(floor(p));
+    vec2 f=fract(p); f=f*f*(3.-2.*f);
+    return mix(mix(rand2(ip),rand2(ip+ivec2(1,0)),f.x),
+        mix(rand2(ip+ivec2(0,1)),rand2(ip+ivec2(1,1)),f.x),f.y);
+}
+void main(){
+    uvec2 id=gl_GlobalInvocationID.xy;
+    if(id.x>=128||id.y>=128)return;
+    vec2 pos=(vec2(id)+.5)/128.0;
+    // Tileable field created with wrap-safe sin/cos phases.
+    vec2 cyc=vec2(cos(pos.x*6.2831853),sin(pos.y*6.2831853));
+    vec2 cyc2=vec2(sin(pos.x*12.5663706),cos(pos.y*12.5663706));
+    vec2 npos=(cyc+cyc2*.53)*3.5+5.0;
+    float gust=noise2(npos)*.68+noise2(npos*2.4)*.32;
+    float turbulence=noise2(npos*4.6+8.3);
+    float turn=noise2(npos*1.7-6.9);
+    float strength=clamp(gust*.78+turbulence*.22,0.,1.);
+    vec4 channels=vec4(strength,turbulence,turn,1.);
+    dest.packedRGBA[id.y*128u+id.x]=packUnorm4x8(channels);
+}
