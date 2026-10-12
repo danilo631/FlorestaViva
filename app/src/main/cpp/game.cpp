@@ -182,7 +182,7 @@ precision highp float;
 precision highp sampler2DShadow;
 in vec3 vP;in vec3 vN;in vec2 vUV;
 uniform sampler2D uGrass,uDirt,uMoss,uGrassNormal,uDirtNormal,uMossNormal;
-uniform sampler2D uGrassRough,uDirtRough,uRiverPebbles,uRiverNormal;
+uniform sampler2D uGrassRough,uDirtRough,uMossRough,uRiverPebbles,uRiverNormal;
 uniform vec3 uEye,uFog,uSun;
 uniform float uLight;
 uniform sampler2DShadow uSunShadow;
@@ -261,7 +261,8 @@ void main(){
     float wet=clamp(moss*.4+dirt*.22,0.0,.34);
     float measuredRough=mix(texture(uGrassRough,guv).r,
         texture(uDirtRough,duv).r,dirt);
-    float roughness=clamp(mix(measuredRough,.70,moss*.42)-wet*.11,.34,.97);
+    float photographedMossRough=texture(uMossRough,muv).r;
+    float roughness=clamp(mix(measuredRough,photographedMossRough,moss*.84)-wet*.11,.34,.97);
     roughness=mix(roughness,.67,wetShore*.82);
     float highlight=ggxSpec(n,V,L,roughness)*diffuse*.30;
     float sunVisibility=visibleSun(vP,n);
@@ -725,7 +726,7 @@ struct State {
     int depthMapSize=0;
     bool treeDepthReady=false;
     Mat4 sunShadowMatrix{};
-    GLuint tex[32]{};
+    GLuint tex[33]{};
     GLuint riverProg=0;
     Mesh wildlifeMeshes[3],reedsMesh,flowersMesh;
     std::vector<ForestAnimal> wildlife;
@@ -1347,6 +1348,8 @@ static void draw(float dt){
     glUniform1i(glGetUniformLocation(game.terrainProg,"uRiverPebbles"),9);
     glActiveTexture(GL_TEXTURE10);glBindTexture(GL_TEXTURE_2D,game.tex[30]);
     glUniform1i(glGetUniformLocation(game.terrainProg,"uRiverNormal"),10);
+    glActiveTexture(GL_TEXTURE11);glBindTexture(GL_TEXTURE_2D,game.tex[32]);
+    glUniform1i(glGetUniformLocation(game.terrainProg,"uMossRough"),11);
     for(const auto& pair:game.chunks){const Mesh& m=pair.second.terrain;
         if(!forestChunkVisible(vp,pair.first))continue;
         glBindVertexArray(m.vao);glDrawElements(GL_TRIANGLES,m.count,GL_UNSIGNED_INT,nullptr);
@@ -1681,7 +1684,7 @@ Java_com_florestaviva_game_MainActivity_nativeResize(JNIEnv*,jclass,jint w,jint 
 }
 extern "C" JNIEXPORT void JNICALL
 Java_com_florestaviva_game_MainActivity_nativeUploadTexture(JNIEnv*env,jclass,jint index,jobject bitmap){
-    if(index<0||index>=32||!bitmap||!game.ready)return;
+    if(index<0||index>=33||!bitmap||!game.ready)return;
     AndroidBitmapInfo info{};
     if(AndroidBitmap_getInfo(env,bitmap,&info)!=ANDROID_BITMAP_RESULT_SUCCESS || info.format!=ANDROID_BITMAP_FORMAT_RGBA_8888)return;
     void* pixels=nullptr;
