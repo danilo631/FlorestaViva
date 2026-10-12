@@ -32,6 +32,8 @@ public class MainActivity extends Activity {
     public static native String nativeBakeWind(android.content.res.AssetManager assets);
     public static native void nativeResize(int width, int height);
     public static native void nativeUploadTexture(int index, Bitmap bitmap);
+    public static native boolean nativeUploadKtx2Asset(
+        android.content.res.AssetManager manager,int index,String filename);
     public static native void nativeInput(float sideways, float forward, float lookX, float lookY,
                                           boolean running, boolean collect);
     public static native void nativeRender(float frameTime);
@@ -181,6 +183,18 @@ public class MainActivity extends Activity {
                     if(bitmap!=null){nativeUploadTexture(i,bitmap);bitmap.recycle();}
                 }catch(Exception e){android.util.Log.e("FlorestaViva","Failed texture: "+files[i],e);}
             }
+            // Prefer real GPU-native ASTC KTX2 when the GLES driver supports it.
+            // Keeping decoded PNGs as fallback is deliberate for SwiftShader,
+            // GPUs without ASTC and corrupt/missing KTX2 assets.
+            int compressedCount=0;
+            for(int i=0;i<files.length;i++) {
+                if(files[i].isEmpty())continue;
+                String ktx="ktx2/"+files[i].replace(".png",".ktx2");
+                if(nativeUploadKtx2Asset(getAssets(),i,ktx))compressedCount++;
+            }
+            android.util.Log.i("FlorestaViva",
+              "GPU ASTC KTX2 textures loaded="+compressedCount+
+              "; remaining slots use PNG/ETC2-compatible RGBA fallback");
             android.util.Log.i("FlorestaViva",nativeBakeWind(getAssets()));
             lastFrame=System.nanoTime();
         }

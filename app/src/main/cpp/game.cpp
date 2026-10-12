@@ -1,3 +1,4 @@
+#include "assets/ktx2.hpp"
 #include <jni.h>
 #include <android/asset_manager_jni.h>
 #include <android/bitmap.h>
@@ -1850,6 +1851,28 @@ Java_com_florestaviva_game_MainActivity_nativeUploadTexture(JNIEnv*env,jclass,ji
         checked=true;
     }
     if(anisotropy)glTexParameterf(GL_TEXTURE_2D,0x84FE,4.0f);
+}
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_florestaviva_game_MainActivity_nativeUploadKtx2Asset(
+    JNIEnv*env,jclass,jobject assetManager,jint index,jstring filename){
+    if(!game.ready||!assetManager||!filename||index<0||index>=39)return JNI_FALSE;
+    AAssetManager*manager=AAssetManager_fromJava(env,assetManager);
+    if(!manager)return JNI_FALSE;
+    const char*name=env->GetStringUTFChars(filename,nullptr);
+    if(!name)return JNI_FALSE;
+    GLuint compressed=0;
+    uint64_t resident=0;
+    const bool ok=forest_assets::loadAstcKtx2(manager,name,compressed,resident);
+    env->ReleaseStringUTFChars(filename,name);
+    if(!ok)return JNI_FALSE;
+    const GLuint previous=game.tex[index];
+    game.tex[index]=compressed;
+    if(previous)glDeleteTextures(1,&previous);
+    debugMetrics.textureBytes=debugMetrics.textureBytes-game.texBytes[index]+resident;
+    game.texBytes[index]=resident;
+    LOGE("ASTC_KTX2 slot=%d residentKiB=%llu",int(index),
+         (unsigned long long)((resident+1023)/1024));
+    return JNI_TRUE;
 }
 extern "C" JNIEXPORT void JNICALL
 Java_com_florestaviva_game_MainActivity_nativeInput(JNIEnv*,jclass,jfloat mx,jfloat mz,
