@@ -82,11 +82,13 @@ static float noise(float x,float z){
     float c=randCell(ix,iz+1),d=randCell(ix+1,iz+1);
     return (a+(b-a)*fx)*(1-fz)+(c+(d-c)*fx)*fz;
 }
+#include "forest_ecosystem.hpp"
 static float height(float x,float z){
-    return 5.2f*(noise(x*.0048f,z*.0048f)-.5f)+
+    const float base=5.2f*(noise(x*.0048f,z*.0048f)-.5f)+
            1.8f*(noise(x*.020f,z*.020f)-.5f)+
            .55f*(noise(x*.065f,z*.065f)-.5f)+
            .7f*std::sin(x*.012f)*std::cos(z*.014f);
+    return forestTerrainHeight(x,z,base);
 }
 static Vec3 normalAt(float x,float z){
     return normalize({height(x-1,z)-height(x+1,z),2.f,height(x,z-1)-height(x,z+1)});
@@ -130,6 +132,9 @@ static void ellipsoid(ModelData& m,Vec3 c,Vec3 scale,int rings=8,int segments=12
 #include "forest_tree_mesh.hpp"
 #include "forest_undergrowth.hpp"
 #include "forest_leaf_litter.hpp"
+#include "forest_fauna.hpp"
+#include "forest_river.hpp"
+#include "forest_biome_props.hpp"
 
 static ModelData makeCards(float width,float h,int crosses){
     ModelData m;
@@ -557,12 +562,12 @@ static Mesh makeMesh(const ModelData& data){
     glBindVertexArray(0);m.count=GLsizei(data.i.size());return m;
 }
 struct ChunkData {
-    Mesh terrain;
-    std::vector<Instance> broad,pine,grass,shrub,fern,seedling,litter,stones,logs,shadow;
+    Mesh terrain,river;
+    std::vector<Instance> broad,pine,grass,shrub,fern,seedling,litter,reeds,flowers,stones,logs,shadow;
 };
 struct Batches {
     std::vector<Instance> broad,pine,grass,shrub,fern,seedling,litter,stones,logs,shadow;
-    void clear(){broad.clear();pine.clear();grass.clear();shrub.clear();fern.clear();seedling.clear();litter.clear();stones.clear();logs.clear();shadow.clear();}
+    void clear(){broad.clear();pine.clear();grass.clear();shrub.clear();fern.clear();seedling.clear();litter.clear();reeds.clear();flowers.clear();stones.clear();logs.clear();shadow.clear();}
 };
 struct Relic {float x,z;bool picked=false;};
 struct State {
@@ -575,7 +580,16 @@ struct State {
     int depthMapSize=0;
     bool treeDepthReady=false;
     Mat4 sunShadowMatrix{};
-    GLuint tex[25]{};
+    GLuint tex[30]{};
+    GLuint riverProg=0;
+    Mesh wildlifeMeshes[3],reedsMesh,flowersMesh;
+    std::vector<ForestAnimal> wildlife;
+    float animalRespawnT=0.f;
+    float feetOffset=0.f,verticalVelocity=0.f;
+    bool jumpQueued=false;
+    int jumps=0;
+    unsigned seenSpecies=0;
+    bool reachedRiver=false;
     GLuint windTex=0;
     bool windVulkan=false;
     Mesh woodHi[5],woodMid[5],leavesHi[5],leavesMid[5],leavesFar[5];
@@ -599,7 +613,7 @@ static void freeMesh(Mesh &m){
     if(m.vbo)glDeleteBuffers(1,&m.vbo);
     if(m.vao)glDeleteVertexArrays(1,&m.vao);m={};
 }
-static void freeChunk(ChunkData &c){freeMesh(c.terrain);}
+static void freeChunk(ChunkData &c){freeMesh(c.terrain);freeMesh(c.river);}
 static ModelData makeTerrain(int cx,int cz){
     ModelData m; m.v.reserve((GRID+1)*(GRID+1));m.i.reserve(GRID*GRID*6);
     for(int j=0;j<=GRID;j++)for(int i=0;i<=GRID;i++){
@@ -616,6 +630,8 @@ static ModelData makeTerrain(int cx,int cz){
 }
 static ChunkData makeChunk(int cx,int cz){
     ChunkData out;out.terrain=makeMesh(makeTerrain(cx,cz));
+    ModelData water=forestRiverSurface(cx,cz);
+    if(!water.i.empty())out.river=makeMesh(water);
     std::mt19937 rng(hash32(uint32_t(cx)*12582917u ^ uint32_t(cz)*4256249u ^ 0x8af553u));
     std::uniform_real_distribution<float> unit(0,1);
     auto samplePos=[&]()->Vec3{
@@ -624,29 +640,44 @@ static ChunkData makeChunk(int cx,int cz){
         return {x,height(x,z),z};
     };
     const float forestDensity=.65f+noise((cx+.5f)*.57f,(cz+.5f)*.57f)*.72f;
-    const int treeCount=int(12.f*forestDensity);
+    const Vec3 biomeCenter{cx*CHUNK+CHUNK*.5f,0,cz*CHUNK+CHUNK*.5f};
+    const ForestBiome biome=forestBiome(biomeCenter.x,biomeCenter.z);
+    const int treeCount=int((biome==ForestBiome::Meadow?5.f:
+            (biome==ForestBiome::Wetland?8.f:12.f))*forestDensity);
     for(int i=0;i<treeCount;i++){
         Vec3 p=samplePos();
-        if(std::hypot(p.x,p.z)<8.f)continue;
+        if(std::hypot(p.x,p.z)<8.f ||
+           riverDistance(p.x,p.z)<riverWidth(p.z)+2.8f)continue;
         float scale=.67f+unit(rng)*.79f,angle=unit(rng)*6.283f,tint=unit(rng);
         Instance ins{p.x,p.y,p.z,scale,angle,tint,0,0};
-        if(unit(rng)<.41f){ins.type=1;out.pine.push_back(ins);}else out.broad.push_back(ins);
+        const float pineChance=biome==ForestBiome::Conifer?.82f:
+            (biome==ForestBiome::Wetland?.12f:.33f);
+        if(unit(rng)<pineChance){ins.type=1;out.pine.push_back(ins);}
+        else out.broad.push_back(ins);
         out.shadow.push_back({p.x,p.y+.06f,p.z,scale*1.65f,0,tint,0,0});
     }
     // Clustered rather than uniform undergrowth: wetter pockets grow denser ferns.
-    const int undergrowthCount=int(340.f*forestDensity);
+    const int undergrowthCount=int((biome==ForestBiome::Meadow?450.f:
+         biome==ForestBiome::Wetland?470.f:340.f)*forestDensity);
     for(int i=0;i<undergrowthCount;i++){
         Vec3 p=samplePos();float scale=.55f+unit(rng)*1.10f;
         Instance ins{p.x,p.y+.025f,p.z,scale,unit(rng)*6.283f,unit(rng),0,0};
         const float moisture=noise(p.x*.021f+49.f,p.z*.021f-17.f);
         const float shade=noise(p.x*.042f-2.f,p.z*.042f+8.f);
         float slope=normalAt(p.x,p.z).y;
-        if(slope<.80f)continue;
+        if(slope<.80f || riverDistance(p.x,p.z)<riverWidth(p.z)-1.f)continue;
+        const float waterEdge=riverDistance(p.x,p.z)-riverWidth(p.z);
+        if(waterEdge<10.f && waterEdge>0.f && unit(rng)<.45f){
+            out.reeds.push_back({p.x,p.y,p.z,scale*.84f,ins.rotation,ins.tint,0,0});
+            continue;
+        }
         float dice=unit(rng);
         if(dice < .080f && shade>.33f){
             out.shrub.push_back({p.x,p.y,p.z,scale*1.25f,ins.rotation,ins.tint,0,0});
         }else if(dice<.190f && moisture>.38f){
             out.fern.push_back({p.x,p.y,p.z,scale*.86f,ins.rotation,ins.tint,0,0});
+        }else if(dice<.35f && biome==ForestBiome::Meadow){
+            out.flowers.push_back({p.x,p.y,p.z,scale*.76f,ins.rotation,ins.tint,0,0});
         }else if(dice<.32f){
             out.seedling.push_back({p.x,p.y+.015f,p.z,scale*.63f,ins.rotation,ins.tint,0,0});
         }else{
@@ -656,6 +687,7 @@ static ChunkData makeChunk(int cx,int cz){
     // Only microclimates suitable for leaf litter receive instanced leaf piles.
     for(int i=0;i<int(82.f*forestDensity);i++){
         Vec3 p=samplePos();
+        if(riverDistance(p.x,p.z)<riverWidth(p.z)+1.f)continue;
         float density=noise(p.x*.036f+19.f,p.z*.036f-2.f);
         if(density<.31f || normalAt(p.x,p.z).y<.91f)continue;
         if(std::hypot(p.x,p.z)<4.f)continue;
@@ -679,7 +711,7 @@ static void rebuildBatches(){
     Batches& b=game.batches;b.clear();
     for(auto& pair:game.chunks){const ChunkData& c=pair.second;
         append(b.broad,c.broad);append(b.pine,c.pine);append(b.grass,c.grass);
-        append(b.shrub,c.shrub);append(b.fern,c.fern);append(b.seedling,c.seedling);append(b.litter,c.litter);
+        append(b.shrub,c.shrub);append(b.fern,c.fern);append(b.seedling,c.seedling);append(b.litter,c.litter);append(b.reeds,c.reeds);append(b.flowers,c.flowers);
         append(b.stones,c.stones);append(b.logs,c.logs);append(b.shadow,c.shadow);
     }
     game.batchesDirty=false;
@@ -1111,11 +1143,13 @@ static void initialize(){
     // Called with a current, potentially new, GLES context.
     game.chunks.clear();game.batches.clear();game.batchesDirty=true;
     game.ready=false;
+    game.wildlife.clear();
     game.terrainProg=program(TERRAIN_VS,TERRAIN_FS);
     game.instProg=program(INST_VS,INST_FS);
     game.shadowProg=program(SHADOW_VS,SHADOW_FS);
     game.skyProg=program(SKY_VS,SKY_FS);
     game.postProg=program(SKY_VS,POST_FS);
+    game.riverProg=program(RIVER_VS,RIVER_FS);
     game.postFbo=game.postColor=game.postDepth=0;
     game.postReady=false;
     game.treeDepthProg=program(TREE_DEPTH_VS,TREE_DEPTH_FS);
@@ -1140,6 +1174,11 @@ static void initialize(){
     game.fernFronds=makeMesh(undergrowth.fern);
     game.groundSeedlings=makeMesh(undergrowth.broadGroundPlant);
     game.leafLitter=makeMesh(forestLeafLitterPatch());
+    game.reedsMesh=makeMesh(makeRiverReeds());
+    game.flowersMesh=makeMesh(makeMeadowFlowers());
+    game.wildlifeMeshes[0]=makeMesh(forestBuildDeer());
+    game.wildlifeMeshes[1]=makeMesh(forestBuildBoar());
+    game.wildlifeMeshes[2]=makeMesh(forestBuildFox());
     game.grass=makeMesh(makeCards(.8f,1.3f,2));
     game.shrub=makeMesh(makeCards(1.6f,1.5f,3));
     game.rock=makeMesh(forestRockMesh());game.fallenLog=makeMesh(forestFallenLog());
@@ -1148,7 +1187,7 @@ static void initialize(){
     game.windTex=createTexture();
     game.ready=true;
     glDisable(GL_CULL_FACE);
-    LOGE("Engine ready: Graphics 7 scanned foliage, mobile post FXAA / ambient occlusion");
+    LOGE("Engine ready: Graphics 8 meandering river, fauna AI, biomes, missions, jump, arm64");
 }
 extern "C" JNIEXPORT void JNICALL
 Java_com_florestaviva_game_MainActivity_nativeCreate(JNIEnv*,jclass){initialize();}
@@ -1224,7 +1263,7 @@ Java_com_florestaviva_game_MainActivity_nativeResize(JNIEnv*,jclass,jint w,jint 
 }
 extern "C" JNIEXPORT void JNICALL
 Java_com_florestaviva_game_MainActivity_nativeUploadTexture(JNIEnv*env,jclass,jint index,jobject bitmap){
-    if(index<0||index>=25||!bitmap||!game.ready)return;
+    if(index<0||index>=30||!bitmap||!game.ready)return;
     AndroidBitmapInfo info{};
     if(AndroidBitmap_getInfo(env,bitmap,&info)!=ANDROID_BITMAP_RESULT_SUCCESS || info.format!=ANDROID_BITMAP_FORMAT_RGBA_8888)return;
     void* pixels=nullptr;
