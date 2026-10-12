@@ -561,7 +561,7 @@ struct ChunkData {
     std::vector<Instance> broad,pine,grass,shrub,fern,seedling,litter,stones,logs,shadow;
 };
 struct Batches {
-    std::vector<Instance> broad,pine,grass,shrub,fern,seedling,stones,logs,shadow;
+    std::vector<Instance> broad,pine,grass,shrub,fern,seedling,litter,stones,logs,shadow;
     void clear(){broad.clear();pine.clear();grass.clear();shrub.clear();fern.clear();seedling.clear();litter.clear();stones.clear();logs.clear();shadow.clear();}
 };
 struct Relic {float x,z;bool picked=false;};
