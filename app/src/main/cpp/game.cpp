@@ -136,6 +136,7 @@ static void ellipsoid(ModelData& m,Vec3 c,Vec3 scale,int rings=8,int segments=12
 #include "forest_river.hpp"
 #include "forest_frustum.hpp"
 #include "forest_biome_props.hpp"
+#include "forest_floor_details.hpp"
 
 static ModelData makeCards(float width,float h,int crosses){
     ModelData m;
@@ -284,6 +285,8 @@ layout(location=3) in vec4 aInst;
 layout(location=4) in vec4 aMeta;
 uniform mat4 uVP;uniform float uTime,uWind,uSpin,uLeafFlutter,uAnimalGait;
 uniform sampler2D uWindField;
+uniform vec3 uPlayerPosition;
+uniform float uInteractiveVegetation;
 out vec3 vN,vP;out vec2 vUV;out float vTint,vType;
 void main(){
     float ang=aMeta.x+uSpin,ca=cos(ang),sa=sin(ang);
@@ -310,6 +313,17 @@ void main(){
         float force=(primary+gust+local)*uWind*max(aPos.y,0.0)*.032;
         p.x+=force;
         p.z+=force*.52;
+    }
+    // Cheap player-driven bend (local plant collisions), based on proximity.
+    // Root stays anchored: only taller vertex regions react to movement.
+    if(uInteractiveVegetation>.5){
+        vec2 delta=aInst.xz-uPlayerPosition.xz;
+        float nearDist=length(delta);
+        float strength=(1.0-smoothstep(.38,2.35,nearDist))*
+                       smoothstep(.03,.75,aPos.y);
+        vec2 push=delta/max(nearDist,.24);
+        float flutter=sin(uTime*8.0+aInst.x*.54+aInst.z*.42);
+        p.xz+=push*(.11+flutter*.023)*strength*aInst.w;
     }
     // Small, per-card flutter is distinct from the entire branch wind sway.
     if(uLeafFlutter>0.0){
@@ -392,8 +406,14 @@ void main(){
     vec3 rgb=s.rgb*diff*(.82+vTint*.33)*hemisphere*
         mix(1.0,.38+.62*visibility,max(dot(n,L),0.0));
     if(uFoliage>.5){
-        float transmission=pow(max(-nl,0.0),1.7)*.23*uLight;
-        rgb+=s.rgb*vec3(.38,.60,.18)*transmission;
+        // A thin leaf transmits warm green sunlight even when back-facing;
+        // alpha coverage approximates optical leaf thickness.
+        float thickness=clamp(.47+.45*(1.0-s.g),.18,.82);
+        float backLight=pow(max(-nl,0.0),1.45);
+        float wrap=clamp((nl+.42)/1.42,0.,1.);
+        float transmitted=(backLight*.30+wrap*.065)*uLight*
+                           mix(.62,1.0,visibility)*(1.0-thickness*.44);
+        rgb+=s.rgb*vec3(.42,.71,.26)*transmitted;
     }else{
         float rough=(uUseRoughnessMap>.5)?
             clamp(texture(uMaterialRough,uv).r,.28,.98):uRoughness;
@@ -609,11 +629,11 @@ static Mesh makeMesh(const ModelData& data){
 }
 struct ChunkData {
     Mesh terrain,river;
-    std::vector<Instance> broad,pine,grass,shrub,fern,seedling,litter,reeds,flowers,stones,logs,shadow;
+    std::vector<Instance> broad,pine,grass,shrub,fern,seedling,litter,twigs,fungi,reeds,flowers,stones,logs,shadow;
 };
 struct Batches {
-    std::vector<Instance> broad,pine,grass,shrub,fern,seedling,litter,reeds,flowers,stones,logs,shadow;
-    void clear(){broad.clear();pine.clear();grass.clear();shrub.clear();fern.clear();seedling.clear();litter.clear();reeds.clear();flowers.clear();stones.clear();logs.clear();shadow.clear();}
+    std::vector<Instance> broad,pine,grass,shrub,fern,seedling,litter,twigs,fungi,reeds,flowers,stones,logs,shadow;
+    void clear(){broad.clear();pine.clear();grass.clear();shrub.clear();fern.clear();seedling.clear();litter.clear();twigs.clear();fungi.clear();reeds.clear();flowers.clear();stones.clear();logs.clear();shadow.clear();}
 };
 struct Relic {float x,z;bool picked=false;};
 struct State {
@@ -640,7 +660,7 @@ struct State {
     bool windVulkan=false;
     Mesh woodHi[5],woodMid[5],leavesHi[5],leavesMid[5],leavesFar[5];
     Mesh grass,shrub,rock,fallenLog,shadow,crystal;
-    Mesh shrubBranches,shrubLeaflets,fernFronds,groundSeedlings,leafLitter;
+    Mesh shrubBranches,shrubLeaflets,fernFronds,groundSeedlings,leafLitter,dryTwigs,fungiStems,fungiCaps;
     std::unordered_map<int64_t,ChunkData> chunks;
     Batches batches;
     bool batchesDirty=true;
@@ -709,7 +729,20 @@ static ChunkData makeChunk(int cx,int cz){
         Vec3 p=samplePos();float scale=.55f+unit(rng)*1.10f;
         Instance ins{p.x,p.y+.025f,p.z,scale,unit(rng)*6.283f,unit(rng),0,0};
         const float moisture=noise(p.x*.021f+49.f,p.z*.021f-17.f);
-        const float shade=noise(p.x*.042f-2.f,p.z*.042f+8.f);
+        // Local canopy shade is derived from *actual* generated trees:
+        // understory growth is now tied to the upper canopy rather than
+        // being scattered equally in an empty field and a dark forest.
+        float canopyShade=0.f;
+        for(const Instance& tree:out.broad){
+            float dx=p.x-tree.x,dz=p.z-tree.z;
+            canopyShade=std::max(canopyShade,(1.f-clampf(std::sqrt(dx*dx+dz*dz)/13.f,0.f,1.f)));
+        }
+        for(const Instance& tree:out.pine){
+            float dx=p.x-tree.x,dz=p.z-tree.z;
+            canopyShade=std::max(canopyShade,(1.f-clampf(std::sqrt(dx*dx+dz*dz)/10.f,0.f,1.f))*.73f);
+        }
+        const float shade=clampf(.2f+canopyShade*.78f+
+                         noise(p.x*.042f-2.f,p.z*.042f+8.f)*.14f,0.f,1.f);
         float slope=normalAt(p.x,p.z).y;
         if(slope<.80f || riverDistance(p.x,p.z)<riverWidth(p.z)-1.f)continue;
         const float waterEdge=riverDistance(p.x,p.z)-riverWidth(p.z);
@@ -718,13 +751,13 @@ static ChunkData makeChunk(int cx,int cz){
             continue;
         }
         float dice=unit(rng);
-        if(dice < .080f && shade>.33f){
+        if(dice < .080f && shade>.39f){
             out.shrub.push_back({p.x,p.y,p.z,scale*1.25f,ins.rotation,ins.tint,0,0});
-        }else if(dice<.190f && moisture>.38f){
+        }else if(dice<.19f+canopyShade*.10f && moisture>.38f){
             out.fern.push_back({p.x,p.y,p.z,scale*.86f,ins.rotation,ins.tint,0,0});
-        }else if(dice<.35f && biome==ForestBiome::Meadow){
+        }else if(dice<.35f && biome==ForestBiome::Meadow && canopyShade<.48f){
             out.flowers.push_back({p.x,p.y,p.z,scale*.76f,ins.rotation,ins.tint,0,0});
-        }else if(dice<.32f){
+        }else if(dice<.32f+canopyShade*.08f){
             out.seedling.push_back({p.x,p.y+.015f,p.z,scale*.63f,ins.rotation,ins.tint,0,0});
         }else{
             out.grass.push_back(ins);
@@ -739,6 +772,31 @@ static ChunkData makeChunk(int cx,int cz){
         if(std::hypot(p.x,p.z)<4.f)continue;
         out.litter.push_back({p.x,p.y+.024f,p.z,.68f+unit(rng)*.60f,
                               unit(rng)*2.f*PI,unit(rng),0,0});
+    }
+    // Forest floor patches: mushrooms favor dark moist under-canopy micro-sites,
+    // while dry twigs collect around (but not directly inside) trunks.
+    for(int i=0;i<int(33.f*forestDensity);i++){
+        Vec3 p=samplePos();
+        if(riverDistance(p.x,p.z)<riverWidth(p.z)+1.0f)continue;
+        if(normalAt(p.x,p.z).y<.84f)continue;
+        float shade=0.f;
+        for(const Instance &t:out.broad){
+            float d=std::hypot(p.x-t.x,p.z-t.z);
+            shade=std::max(shade,1.f-clampf(d/12.f,0.f,1.f));
+        }
+        for(const Instance &t:out.pine){
+            float d=std::hypot(p.x-t.x,p.z-t.z);
+            shade=std::max(shade,(1.f-clampf(d/10.f,0.f,1.f))*.7f);
+        }
+        float moisture=noise(p.x*.019f+2.f,p.z*.019f-13.f);
+        const float coin=unit(rng);
+        if(shade>.28f && moisture>.51f && coin<.38f){
+            out.fungi.push_back({p.x,p.y+.022f,p.z,.78f+unit(rng)*.54f,
+                                 unit(rng)*2.f*PI,unit(rng),0,0});
+        }else if(shade>.16f && coin<.70f){
+            out.twigs.push_back({p.x,p.y+.035f,p.z,.65f+unit(rng)*.66f,
+                                 unit(rng)*2.f*PI,unit(rng),0,0});
+        }
     }
     for(int i=0;i<3;i++){
         Vec3 p=samplePos();
@@ -757,7 +815,7 @@ static void rebuildBatches(){
     Batches& b=game.batches;b.clear();
     for(auto& pair:game.chunks){const ChunkData& c=pair.second;
         append(b.broad,c.broad);append(b.pine,c.pine);append(b.grass,c.grass);
-        append(b.shrub,c.shrub);append(b.fern,c.fern);append(b.seedling,c.seedling);append(b.litter,c.litter);append(b.reeds,c.reeds);append(b.flowers,c.flowers);
+        append(b.shrub,c.shrub);append(b.fern,c.fern);append(b.seedling,c.seedling);append(b.litter,c.litter);append(b.twigs,c.twigs);append(b.fungi,c.fungi);append(b.reeds,c.reeds);append(b.flowers,c.flowers);
         append(b.stones,c.stones);append(b.logs,c.logs);append(b.shadow,c.shadow);
     }
     game.batchesDirty=false;
@@ -840,6 +898,7 @@ static void material(int index,float cutout,float wind,float emissive=0.f,float 
     set1(game.instProg,"uFoliage",(index==4||index==5||index==6||index==11||index==13)?1.f:0.f);
     set1(game.instProg,"uLeafFlutter",(index==11||index==13)?0.04f:0.f);
     set1(game.instProg,"uLeafLitter",0.f);
+    set1(game.instProg,"uInteractiveVegetation",0.f);
     set1(game.instProg,"uAnimalGait",index==27?1.f:0.f);
 }
 static void simulateWildlife(float dt){
@@ -1170,6 +1229,7 @@ static void draw(float dt){
     glBindTexture(GL_TEXTURE_2D,game.windTex);
     glUniform1i(glGetUniformLocation(game.instProg,"uWindField"),2);
     set1(game.instProg,"uTime",game.t);
+    set3(game.instProg,"uPlayerPosition",Vec3{game.x,height(game.x,game.z),game.z});
     // Quality profiles change both triangle counts and alpha-fragment pressure.
     const float nearMeters=game.graphicsQuality==0?32.f:(game.graphicsQuality==2?74.f:52.f);
     const float midMeters=game.graphicsQuality==0?88.f:(game.graphicsQuality==2?155.f:118.f);
@@ -1215,7 +1275,10 @@ static void draw(float dt){
         float dx=t.x-game.x,dz=t.z-game.z;
         if(dx*dx+dz*dz<grassMeters*grassMeters)closeGrass.push_back(t);
     }
-    material(5,.42f,.8f);instDraw(game.grass,closeGrass);
+    material(5,.42f,.8f);
+    set1(game.instProg,"uInteractiveVegetation",1.f);
+    instDraw(game.grass,closeGrass);
+    set1(game.instProg,"uInteractiveVegetation",0.f);
     // Sub-canopy LOD: high detail near, compact atlas impostors in the mid range.
     const float shrubRange=game.graphicsQuality==0?20.f:(game.graphicsQuality==2?45.f:30.f);
     const float fernRange=game.graphicsQuality==0?22.f:(game.graphicsQuality==2?50.f:35.f);
@@ -1236,9 +1299,22 @@ static void draw(float dt){
     closeVegetation(game.batches.seedling,nearSeedlings,fernRange*.8f);
     material(3,0.f,.06f);instDraw(game.shrubBranches,nearShrub);
     material(11,.38f,.54f);instDraw(game.shrubLeaflets,nearShrub);
-    material(11,.38f,.78f);instDraw(game.fernFronds,nearFern);
+    material(11,.38f,.78f);
+    set1(game.instProg,"uInteractiveVegetation",1.f);
+    instDraw(game.fernFronds,nearFern);
+    set1(game.instProg,"uInteractiveVegetation",0.f);
     material(11,.38f,.70f);instDraw(game.groundSeedlings,nearSeedlings);
     material(6,.36f,.50f);instDraw(game.shrub,midShrub);
+    // Layer four: individual wood debris and mushrooms are true mesh details,
+    // limited to near-field vegetation to avoid excessive fragment processing.
+    std::vector<Instance> localTwigs,localFungi;
+    const float microRange=game.graphicsQuality==0?12.f:
+                           (game.graphicsQuality==2?30.f:22.f);
+    closeVegetation(game.batches.twigs,localTwigs,microRange);
+    closeVegetation(game.batches.fungi,localFungi,microRange*.83f);
+    material(3,0.f,0.f);instDraw(game.dryTwigs,localTwigs);
+    material(3,0.f,0.f);instDraw(game.fungiStems,localFungi);
+    material(17,0.f,0.f);instDraw(game.fungiCaps,localFungi);
     // Near-field separate fallen leaves build actual layers on the forest floor.
     std::vector<Instance> nearLitter;
     nearLitter.reserve(500);
@@ -1375,6 +1451,10 @@ static void initialize(){
     game.fernFronds=makeMesh(undergrowth.fern);
     game.groundSeedlings=makeMesh(undergrowth.broadGroundPlant);
     game.leafLitter=makeMesh(forestLeafLitterPatch());
+    ForestFloorDetails floor=forestBuildFloorDetails();
+    game.dryTwigs=makeMesh(floor.dryTwigs);
+    game.fungiStems=makeMesh(floor.fungiStems);
+    game.fungiCaps=makeMesh(floor.fungiCaps);
     game.reedsMesh=makeMesh(makeRiverReeds());
     game.flowersMesh=makeMesh(makeMeadowFlowers());
     game.wildlifeMeshes[0]=makeMesh(forestBuildDeer());
