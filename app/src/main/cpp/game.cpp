@@ -93,7 +93,10 @@ static float height(float x,float z){
 static Vec3 normalAt(float x,float z){
     return normalize({height(x-1,z)-height(x+1,z),2.f,height(x,z-1)-height(x,z+1)});
 }
-struct Vertex {float x,y,z,nx,ny,nz,u,v;};
+struct Vertex {float x,y,z,nx,ny,nz,u,v;
+    // Pivot Painter-inspired packed data: local origin and tip bend weight.
+    float pivotX=0,pivotY=0,pivotZ=0,bend=0;
+};
 struct Instance {float x,y,z,s,rotation,tint,type,pad;};
 struct Mesh {
     GLuint vao=0,vbo=0,ebo=0;
@@ -283,7 +286,8 @@ layout(location=1) in vec3 aNormal;
 layout(location=2) in vec2 aUV;
 layout(location=3) in vec4 aInst;
 layout(location=4) in vec4 aMeta;
-uniform mat4 uVP;uniform float uTime,uWind,uSpin,uLeafFlutter,uAnimalGait;
+layout(location=5) in vec4 aPivot;
+uniform mat4 uVP;uniform float uTime,uWind,uSpin,uLeafFlutter,uAnimalGait,uPivotWind;
 uniform sampler2D uWindField;
 uniform vec3 uPlayerPosition;
 uniform float uInteractiveVegetation;
@@ -291,6 +295,18 @@ out vec3 vN,vP;out vec2 vUV;out float vTint,vType;
 void main(){
     float ang=aMeta.x+uSpin,ca=cos(ang),sa=sin(ang);
     vec3 p=aPos*aInst.w;
+    // Local-space pivot hierarchy: branch bases stay stable while tips flex.
+    // Encoded once at mesh creation, no bone or per-leaf draw call.
+    if(uPivotWind>.0 && aPivot.w>.0){
+        vec3 pivot=aPivot.xyz*aInst.w;
+        vec3 rel=p-pivot;
+        float phase=uTime*1.54+aInst.x*.19+aInst.z*.13+
+                    dot(aPivot.xyz,vec3(.13,.21,.18));
+        float angle=(sin(phase)+.23*sin(phase*2.47))*aPivot.w*uPivotWind;
+        float si=sin(angle),co=cos(angle);
+        rel.xz=mat2(co,-si,si,co)*rel.xz;
+        p=pivot+rel;
+    }
     if(uAnimalGait>.0){
         // Mobile procedural quadruped gait: light hoof swing and limb lift.
         // Real skeletal locomotion remains a separate animation milestone.
@@ -597,11 +613,23 @@ layout(location=0) in vec3 aPos;
 layout(location=2) in vec2 aUV;
 layout(location=3) in vec4 aInst;
 layout(location=4) in vec4 aMeta;
+layout(location=5) in vec4 aPivot;
 uniform mat4 uLightVP;
+uniform float uTime,uPivotWind;
 out vec2 vUV;
 void main(){
   float a=aMeta.x;
   vec3 p=aPos*aInst.w;
+  if(uPivotWind>.0&&aPivot.w>.0){
+      vec3 pivot=aPivot.xyz*aInst.w;
+      vec3 rel=p-pivot;
+      float phase=uTime*1.54+aInst.x*.19+aInst.z*.13+
+                  dot(aPivot.xyz,vec3(.13,.21,.18));
+      float angle=(sin(phase)+.23*sin(phase*2.47))*aPivot.w*uPivotWind;
+      float si=sin(angle),co=cos(angle);
+      rel.xz=mat2(co,-si,si,co)*rel.xz;
+      p=pivot+rel;
+  }
   vec3 world=vec3(p.x*cos(a)-p.z*sin(a),p.y,p.x*sin(a)+p.z*cos(a))+aInst.xyz;
   gl_Position=uLightVP*vec4(world,1.0);
   vUV=aUV;
@@ -670,6 +698,7 @@ static Mesh makeMesh(const ModelData& data){
     glEnableVertexAttribArray(0);glVertexAttribPointer(0,3,GL_FLOAT,GL_FALSE,sizeof(Vertex),(void*)0);
     glEnableVertexAttribArray(1);glVertexAttribPointer(1,3,GL_FLOAT,GL_FALSE,sizeof(Vertex),(void*)(3*sizeof(float)));
     glEnableVertexAttribArray(2);glVertexAttribPointer(2,2,GL_FLOAT,GL_FALSE,sizeof(Vertex),(void*)(6*sizeof(float)));
+    glEnableVertexAttribArray(5);glVertexAttribPointer(5,4,GL_FLOAT,GL_FALSE,sizeof(Vertex),(void*)(8*sizeof(float)));
     glBindBuffer(GL_ARRAY_BUFFER,instanceBuffer);
     glEnableVertexAttribArray(3);glVertexAttribPointer(3,4,GL_FLOAT,GL_FALSE,sizeof(Instance),(void*)0);
     glEnableVertexAttribArray(4);glVertexAttribPointer(4,4,GL_FLOAT,GL_FALSE,sizeof(Instance),(void*)(4*sizeof(float)));
@@ -949,6 +978,8 @@ static void material(int index,float cutout,float wind,float emissive=0.f,float 
     set1(game.instProg,"uLeafLitter",0.f);
     set1(game.instProg,"uInteractiveVegetation",0.f);
     set1(game.instProg,"uAnimalGait",index==27?1.f:0.f);
+    set1(game.instProg,"uPivotWind",(index==11||index==13)?.105f:
+                                      ((index==3||index==15)?.040f:0.f));
 }
 static void simulateWildlife(float dt){
     // Deterministic population around the moving player; persistent agents
@@ -1082,6 +1113,7 @@ static bool ensureSunShadowFbo(int size){
     return game.treeDepthReady;
 }
 static void treeShadowMaterial(int textureIndex,bool alpha){
+    set1(game.treeDepthProg,"uPivotWind",alpha?.105f:.040f);
     if(alpha){
         int layer=textureIndex==13?3:2;
         float u=float(layer%2)*.5f,v=float(layer/2)*.5f;
@@ -1114,6 +1146,7 @@ static void castForestShadows(const std::vector<Instance>& broad,
     glUniformMatrix4fv(glGetUniformLocation(game.treeDepthProg,"uLightVP"),
                        1,GL_FALSE,game.sunShadowMatrix.m);
     glUniform1i(glGetUniformLocation(game.treeDepthProg,"uMask"),0);
+    set1(game.treeDepthProg,"uTime",game.t);
     // Keep shadows dense near player without drawing distant, invisible trees.
     std::array<std::vector<Instance>,5> plants;
     auto add=[&](const std::vector<Instance>& group,bool conifer){

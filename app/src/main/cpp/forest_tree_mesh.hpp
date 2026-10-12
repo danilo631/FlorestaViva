@@ -49,7 +49,9 @@ static void forestTube(ModelData &mesh,const std::vector<Vec3>& control,
             Vec3 n=normalize(side*std::cos(angle)+binormal*std::sin(angle));
             Vec3 p=samples[i]+n*rad;
             mesh.v.push_back({p.x,p.y,p.z,n.x,n.y,n.z,
-                float(s)/facets, distance*barkRepeat});
+                float(s)/facets, distance*barkRepeat,
+                control.front().x,control.front().y,control.front().z,
+                control.front().y>.25f?t*t*.42f:0.f});
         }
     }
     for(int i=0;i<segments;i++)for(int s=0;s<facets;s++){
@@ -78,7 +80,8 @@ static void forestLeaf(ModelData &mesh,Vec3 start,Vec3 outward,
             Vec3 p=center+across*(lateral*halfWidth);
             Vec3 nn=normalize(face+across*(lateral*.22f)+outward*(.18f*std::cos(PI*t)));
             float uu=cellX+(.025f+.95f*float(j)*.5f)*.25f;
-            mesh.v.push_back({p.x,p.y,p.z,nn.x,nn.y,nn.z,uu,vv});
+            mesh.v.push_back({p.x,p.y,p.z,nn.x,nn.y,nn.z,uu,vv,
+                              start.x,start.y,start.z,t*t});
         }
     }
     for(int k=0;k<slices;k++)for(int j=0;j<2;j++){

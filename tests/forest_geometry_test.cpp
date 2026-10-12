@@ -23,7 +23,9 @@ struct Vec3 {
 float dot(Vec3 a,Vec3 b){return a.x*b.x+a.y*b.y+a.z*b.z;}
 Vec3 cross(Vec3 a,Vec3 b){return {a.y*b.z-a.z*b.y,a.z*b.x-a.x*b.z,a.x*b.y-a.y*b.x};}
 Vec3 normalize(Vec3 a){float l=std::sqrt(std::max(dot(a,a),1e-12f));return a*(1.f/l);}
-struct Vertex {float x,y,z,nx,ny,nz,u,v;};
+struct Vertex {float x,y,z,nx,ny,nz,u,v;
+    float pivotX=0,pivotY=0,pivotZ=0,bend=0;
+};
 struct ModelData {
     std::vector<Vertex> v;
     std::vector<uint32_t> i;
@@ -53,7 +55,8 @@ void check(const ModelData& m,const char* name){
     if(m.i.size()%3)throw std::runtime_error(std::string(name)+" nontriangles");
     for(uint32_t i:m.i)if(i>=m.v.size())throw std::runtime_error(std::string(name)+" invalid index");
     for(auto v:m.v){
-        for(float q:{v.x,v.y,v.z,v.nx,v.ny,v.nz,v.u,v.v})
+        for(float q:{v.x,v.y,v.z,v.nx,v.ny,v.nz,v.u,v.v,
+                     v.pivotX,v.pivotY,v.pivotZ,v.bend})
             if(!std::isfinite(q))throw std::runtime_error(std::string(name)+" nonfinite");
         if(v.u<-.0001f || v.u>8.f || v.v<-.0001f || v.v>80.f)
             throw std::runtime_error(std::string(name)+" UV out of expected bounds");
