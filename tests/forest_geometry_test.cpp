@@ -163,15 +163,15 @@ int main(){
         std::cout<<"wildlife triangles deer="<<deer.i.size()/3
                  <<" boar="<<boar.i.size()/3
                  <<" fox="<<fox.i.size()/3<<"\n";
-        auto details=forestBuildFloorDetails();
-        check(details.dryTwigs,"3D dry ground twigs");
-        check(details.fungiStems,"3D mushroom stalks");
-        check(details.fungiCaps,"3D mushroom caps");
-        if(details.dryTwigs.i.size()/3<100 || details.fungiCaps.i.size()/3<100)
+        auto forestFloor=forestBuildFloorDetails();
+        check(forestFloor.dryTwigs,"3D dry ground twigs");
+        check(forestFloor.fungiStems,"3D mushroom stalks");
+        check(forestFloor.fungiCaps,"3D mushroom caps");
+        if(forestFloor.dryTwigs.i.size()/3<100 || forestFloor.fungiCaps.i.size()/3<100)
             throw std::runtime_error("insufficient groundcover detail");
         std::cout<<"layer four groundcover triangles: "<<
-            (details.dryTwigs.i.size()+details.fungiStems.i.size()+
-             details.fungiCaps.i.size())/3<<"\n";
+            (forestFloor.dryTwigs.i.size()+forestFloor.fungiStems.i.size()+
+             forestFloor.fungiCaps.i.size())/3<<"\n";
         auto rock=forestRockMesh();check(rock,"rock");
         auto log=forestFallenLog();check(log,"fallenLog");
         if(total<12000)throw std::runtime_error("tree meshes unexpectedly low-poly");
