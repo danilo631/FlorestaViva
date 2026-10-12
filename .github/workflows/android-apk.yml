@@ -2,7 +2,7 @@ name: Gerar APK Android
 on:
   workflow_dispatch:
   push:
-    branches: [main, master, graphics3-atlas-vulkan-sky, graphics4-procedural-aaa-vegetation]
+    branches: [main, master, graphics3-atlas-vulkan-sky, graphics4-procedural-aaa-vegetation, graphics5-dense-vegetation-vulkan-compute]
   pull_request:
     branches: [main]
 jobs:
@@ -46,6 +46,15 @@ jobs:
           python tools/material_maps.py --size 512
           python tools/foliage_atlas.py --size 1024
           python tools/forest_materials.py
+          python tools/foliage_pack.py --tile 768
+          python - <<'PY'
+          from PIL import Image
+          from pathlib import Path
+          a=Path('app/src/main/assets')
+          for p in ('foliage_color.png','foliage_normal.png'):
+              img=Image.open(a/p)
+              assert img.size==(1536,1536) and img.mode=='RGBA'
+          PY
           python - <<'PY'
           from pathlib import Path
           from PIL import Image
@@ -67,6 +76,7 @@ jobs:
           mkdir -p app/src/main/assets/vulkan
           "$GLSLC" shaders/foliage.vert -o app/src/main/assets/vulkan/foliage.vert.spv
           "$GLSLC" shaders/foliage.frag -o app/src/main/assets/vulkan/foliage.frag.spv
+          "$GLSLC" shaders/wind.comp -o app/src/main/assets/vulkan/wind.comp.spv
       - name: Testar geometria nativa das árvores
         shell: bash
         run: |
@@ -79,7 +89,7 @@ jobs:
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: FlorestaViva-Graphics4-APK
+          name: FlorestaViva-Graphics5-APK
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
       - name: Publicar modelos 3D editáveis

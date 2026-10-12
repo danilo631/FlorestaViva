@@ -28,6 +28,7 @@ public class MainActivity extends Activity {
     public static native void nativeCreate();
     public static native void nativeSetGraphicsQuality(int level);
     public static native String nativeVulkanInfo();
+    public static native String nativeBakeWind(android.content.res.AssetManager assets);
     public static native void nativeResize(int width, int height);
     public static native void nativeUploadTexture(int index, Bitmap bitmap);
     public static native void nativeInput(float sideways, float forward, float lookX, float lookY,
@@ -136,21 +137,23 @@ public class MainActivity extends Activity {
             String saved=getSharedPreferences("floresta_save",MODE_PRIVATE).getString("progress",null);
             if(saved!=null)nativeLoad(saved);
             String[] files = {"grass.png","soil.png","moss.png","bark.png",
-                    "canopy.png","blades.png","bush.png",
+                    "canopy.png","","",
                     "grass_normal.png","soil_normal.png","moss_normal.png","bark_normal.png",
-                    "leaves_atlas.png","leaves_normal.png",
-                    "pine_atlas.png","pine_normal.png",
+                    "","","",
                     "pine_bark.png","pine_bark_normal.png",
-                    "rock.png","rock_normal.png"};
+                    "rock.png","rock_normal.png",
+                    "foliage_color.png","foliage_normal.png"};
             BitmapFactory.Options opts = new BitmapFactory.Options();
             opts.inScaled = false;
             opts.inPreferredConfig = Bitmap.Config.ARGB_8888;
             for(int i=0;i<files.length;i++) {
+                if(files[i].isEmpty())continue; // Superseded by unified 2x2 foliage pack.
                 try(InputStream stream=getAssets().open(files[i])) {
                     Bitmap bitmap=BitmapFactory.decodeStream(stream,null,opts);
                     if(bitmap!=null){nativeUploadTexture(i,bitmap);bitmap.recycle();}
                 }catch(Exception e){android.util.Log.e("FlorestaViva","Failed texture: "+files[i],e);}
             }
+            android.util.Log.i("FlorestaViva",nativeBakeWind(getAssets()));
             lastFrame=System.nanoTime();
         }
         @Override public void onSurfaceChanged(GL10 unused,int width,int height){nativeResize(width,height);}

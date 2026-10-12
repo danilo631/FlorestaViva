@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22.1)
 project(florestaviva LANGUAGES CXX)
 
-add_library(florestaviva SHARED game.cpp)
+add_library(florestaviva SHARED game.cpp vulkan_wind.cpp)
 target_compile_features(florestaviva PRIVATE cxx_std_17)
 target_compile_options(florestaviva PRIVATE -Wall -Wextra -O3)
 

@@ -1,4 +1,5 @@
 #include <jni.h>
+#include <android/asset_manager_jni.h>
 #include <android/bitmap.h>
 #include <android/log.h>
 #include <GLES3/gl3.h>
@@ -9,6 +10,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <limits>
 #include <random>
 #include <string>
@@ -115,6 +117,7 @@ static void ellipsoid(ModelData& m,Vec3 c,Vec3 scale,int rings=8,int segments=12
     }
 }
 #include "forest_tree_mesh.hpp"
+#include "forest_undergrowth.hpp"
 
 static ModelData makeCards(float width,float h,int crosses){
     ModelData m;
@@ -203,6 +206,7 @@ layout(location=2) in vec2 aUV;
 layout(location=3) in vec4 aInst;
 layout(location=4) in vec4 aMeta;
 uniform mat4 uVP;uniform float uTime,uWind,uSpin,uLeafFlutter;
+uniform sampler2D uWindField;
 out vec3 vN,vP;out vec2 vUV;out float vTint,vType;
 void main(){
     float ang=aMeta.x+uSpin,ca=cos(ang),sa=sin(ang);
@@ -210,7 +214,10 @@ void main(){
     if(uWind>0.0){
         float phase=uTime*1.08+aInst.x*.13+aInst.z*.17;
         float primary=sin(phase+aPos.y*.32);
-        float gust=sin(phase*.41+sin(aInst.z*.065))*.40;
+        vec2 fieldUV=fract(aInst.xz*.0082+vec2(uTime*.0074,uTime*.0031));
+        vec3 windMap=texture(uWindField,fieldUV).rgb;
+        float gust=(windMap.r-.48)*.92+
+            sin(phase*.41+sin(aInst.z*.065))*.26;
         float local=sin(uTime*2.45+aPos.x*1.9+aPos.z*1.6+aInst.y)*.18;
         float force=(primary+gust+local)*uWind*max(aPos.y,0.0)*.032;
         p.x+=force;
@@ -234,6 +241,7 @@ static const char* INST_FS=R"GLSL(#version 300 es
 precision highp float;
 in vec3 vN,vP;in vec2 vUV;in float vTint,vType;
 uniform sampler2D uTex,uMaterialNormal;
+uniform vec4 uAtlasRect;
 uniform vec3 uEye,uFog,uSun;
 uniform float uLight,uCutout,uEmissive,uRoughness,uBump,uFoliage;
 out vec4 Frag;
@@ -248,7 +256,8 @@ float specGGX(vec3 N,vec3 V,vec3 L,float roughness){
     return d*g*f/(4.0*max(nl*nv,.05));
 }
 void main(){
-    vec4 s=texture(uTex,vUV);
+    vec2 uv=uAtlasRect.xy+clamp(vUV,vec2(.002),vec2(.998))*uAtlasRect.zw;
+    vec4 s=texture(uTex,uv);
     if(s.a<uCutout)discard;
     vec3 n=normalize(vN),V=normalize(uEye-vP),L=normalize(uSun);
     // Alpha-tested foliage cards are rendered two-sided, including their lighting.
@@ -260,7 +269,7 @@ void main(){
         if(abs(det)>.00001){
             vec3 T=normalize((q0*st1.y-q1*st0.y)/det);
             vec3 B=normalize((-q0*st1.x+q1*st0.x)/det);
-            vec3 map=texture(uMaterialNormal,vUV).rgb*2.0-1.0;
+            vec3 map=texture(uMaterialNormal,uv).rgb*2.0-1.0;
             n=normalize(n+uBump*(T*map.x+B*map.y));
         }
     }
@@ -389,19 +398,22 @@ static Mesh makeMesh(const ModelData& data){
 }
 struct ChunkData {
     Mesh terrain;
-    std::vector<Instance> broad,pine,grass,shrub,stones,logs,shadow;
+    std::vector<Instance> broad,pine,grass,shrub,fern,seedling,stones,logs,shadow;
 };
 struct Batches {
-    std::vector<Instance> broad,pine,grass,shrub,stones,logs,shadow;
-    void clear(){broad.clear();pine.clear();grass.clear();shrub.clear();stones.clear();logs.clear();shadow.clear();}
+    std::vector<Instance> broad,pine,grass,shrub,fern,seedling,stones,logs,shadow;
+    void clear(){broad.clear();pine.clear();grass.clear();shrub.clear();fern.clear();seedling.clear();stones.clear();logs.clear();shadow.clear();}
 };
 struct Relic {float x,z;bool picked=false;};
 struct State {
     int width=1280,height=720;
     GLuint terrainProg=0,instProg=0,shadowProg=0,skyProg=0,skyVao=0;
-    GLuint tex[19]{};
+    GLuint tex[21]{};
+    GLuint windTex=0;
+    bool windVulkan=false;
     Mesh woodHi[5],woodMid[5],leavesHi[5],leavesMid[5],leavesFar[5];
     Mesh grass,shrub,rock,fallenLog,shadow,crystal;
+    Mesh shrubBranches,shrubLeaflets,fernFronds,groundSeedlings;
     std::unordered_map<int64_t,ChunkData> chunks;
     Batches batches;
     bool batchesDirty=true;
@@ -454,12 +466,25 @@ static ChunkData makeChunk(int cx,int cz){
         if(unit(rng)<.41f){ins.type=1;out.pine.push_back(ins);}else out.broad.push_back(ins);
         out.shadow.push_back({p.x,p.y+.06f,p.z,scale*1.65f,0,tint,0,0});
     }
-    const int undergrowthCount=int(200.f*forestDensity);
+    // Clustered rather than uniform undergrowth: wetter pockets grow denser ferns.
+    const int undergrowthCount=int(340.f*forestDensity);
     for(int i=0;i<undergrowthCount;i++){
         Vec3 p=samplePos();float scale=.55f+unit(rng)*1.10f;
         Instance ins{p.x,p.y+.025f,p.z,scale,unit(rng)*6.283f,unit(rng),0,0};
-        if(i%19==0)out.shrub.push_back({p.x,p.y,p.z,scale*2.f,ins.rotation,ins.tint,0,0});
-        else out.grass.push_back(ins);
+        const float moisture=noise(p.x*.021f+49.f,p.z*.021f-17.f);
+        const float shade=noise(p.x*.042f-2.f,p.z*.042f+8.f);
+        float slope=normalAt(p.x,p.z).y;
+        if(slope<.80f)continue;
+        float dice=unit(rng);
+        if(dice < .080f && shade>.33f){
+            out.shrub.push_back({p.x,p.y,p.z,scale*1.25f,ins.rotation,ins.tint,0,0});
+        }else if(dice<.190f && moisture>.38f){
+            out.fern.push_back({p.x,p.y,p.z,scale*.86f,ins.rotation,ins.tint,0,0});
+        }else if(dice<.32f){
+            out.seedling.push_back({p.x,p.y+.015f,p.z,scale*.63f,ins.rotation,ins.tint,0,0});
+        }else{
+            out.grass.push_back(ins);
+        }
     }
     for(int i=0;i<3;i++){
         Vec3 p=samplePos();
@@ -478,7 +503,8 @@ static void rebuildBatches(){
     Batches& b=game.batches;b.clear();
     for(auto& pair:game.chunks){const ChunkData& c=pair.second;
         append(b.broad,c.broad);append(b.pine,c.pine);append(b.grass,c.grass);
-        append(b.shrub,c.shrub);append(b.stones,c.stones);append(b.logs,c.logs);append(b.shadow,c.shadow);
+        append(b.shrub,c.shrub);append(b.fern,c.fern);append(b.seedling,c.seedling);
+        append(b.stones,c.stones);append(b.logs,c.logs);append(b.shadow,c.shadow);
     }
     game.batchesDirty=false;
 }
@@ -524,16 +550,33 @@ static void instDraw(const Mesh& mesh,const std::vector<Instance>& instances){
     glBindVertexArray(0);
 }
 static void material(int index,float cutout,float wind,float emissive=0.f,float spin=0.f){
-    glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_2D,game.tex[index]);
+    int layer=-1;
+    if(index==5)layer=0;      // grass
+    else if(index==6)layer=1; // bush
+    else if(index==11)layer=2;// broadleaf
+    else if(index==13)layer=3;// pine needles
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D,game.tex[layer>=0?19:index]);
     glUniform1i(glGetUniformLocation(game.instProg,"uTex"),0);
-    glActiveTexture(GL_TEXTURE1);glBindTexture(GL_TEXTURE_2D,game.tex[index==13?14:(index==11?12:(index==15?16:(index==17?18:10)))]);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D,game.tex[layer>=0?20:
+        (index==15?16:(index==17?18:10))]);
     glUniform1i(glGetUniformLocation(game.instProg,"uMaterialNormal"),1);
+    if(layer>=0){
+        float x=(layer%2)*.5f,y=(layer/2)*.5f;
+        // Half-pixel inset prevents cross-material mipmap/anisotropic bleeding.
+        glUniform4f(glGetUniformLocation(game.instProg,"uAtlasRect"),
+                    x+.00065f,y+.00065f,.4987f,.4987f);
+    }else{
+        glUniform4f(glGetUniformLocation(game.instProg,"uAtlasRect"),0.f,0.f,1.f,1.f);
+    }
     set1(game.instProg,"uCutout",cutout);
     set1(game.instProg,"uWind",wind);
     set1(game.instProg,"uEmissive",emissive);
     set1(game.instProg,"uSpin",spin);
     set1(game.instProg,"uRoughness",(index==3||index==15)?.83f:(index==17?.90f:.94f));
-    set1(game.instProg,"uBump",(index==3||index==15)?.63f:(index==17?.42f:((index==11||index==13)?.64f:0.f)));
+    set1(game.instProg,"uBump",(index==3||index==15)?.63f:
+          (index==17?.42f:((index==11||index==13||index==5||index==6)?.64f:0.f)));
     set1(game.instProg,"uFoliage",(index==4||index==5||index==6||index==11||index==13)?1.f:0.f);
     set1(game.instProg,"uLeafFlutter",(index==11||index==13)?0.04f:0.f);
 }
@@ -617,6 +660,9 @@ static void draw(float dt){
     glDepthMask(GL_FALSE);instDraw(game.shadow,game.batches.shadow);glDepthMask(GL_TRUE);
     glDisable(GL_BLEND);
     common(game.instProg,vp,eye,fog,light);
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D,game.windTex);
+    glUniform1i(glGetUniformLocation(game.instProg,"uWindField"),2);
     set1(game.instProg,"uTime",game.t);
     // Quality profiles change both triangle counts and alpha-fragment pressure.
     const float nearMeters=game.graphicsQuality==0?32.f:(game.graphicsQuality==2?74.f:52.f);
@@ -664,7 +710,29 @@ static void draw(float dt){
         if(dx*dx+dz*dz<grassMeters*grassMeters)closeGrass.push_back(t);
     }
     material(5,.42f,.8f);instDraw(game.grass,closeGrass);
-    material(6,.36f,.5f);instDraw(game.shrub,game.batches.shrub);
+    // Sub-canopy LOD: high detail near, compact atlas impostors in the mid range.
+    const float shrubRange=game.graphicsQuality==0?20.f:(game.graphicsQuality==2?45.f:30.f);
+    const float fernRange=game.graphicsQuality==0?22.f:(game.graphicsQuality==2?50.f:35.f);
+    std::vector<Instance> nearShrub,midShrub,nearFern,nearSeedlings;
+    nearShrub.reserve(120);midShrub.reserve(240);nearFern.reserve(150);
+    auto closeVegetation=[&](const std::vector<Instance>& src,std::vector<Instance>& dst,float reach){
+        for(const auto& obj:src){
+            const float dx=obj.x-game.x,dz=obj.z-game.z;
+            if(dx*dx+dz*dz<reach*reach)dst.push_back(obj);
+        }
+    };
+    closeVegetation(game.batches.shrub,nearShrub,shrubRange);
+    for(const auto& obj:game.batches.shrub){
+        const float dx=obj.x-game.x,dz=obj.z-game.z,ds=dx*dx+dz*dz;
+        if(ds>=shrubRange*shrubRange && ds<100.f*100.f)midShrub.push_back(obj);
+    }
+    closeVegetation(game.batches.fern,nearFern,fernRange);
+    closeVegetation(game.batches.seedling,nearSeedlings,fernRange*.8f);
+    material(3,0.f,.06f);instDraw(game.shrubBranches,nearShrub);
+    material(11,.38f,.54f);instDraw(game.shrubLeaflets,nearShrub);
+    material(11,.38f,.78f);instDraw(game.fernFronds,nearFern);
+    material(11,.38f,.70f);instDraw(game.groundSeedlings,nearSeedlings);
+    material(6,.36f,.50f);instDraw(game.shrub,midShrub);
     material(17,0.f,0.f);instDraw(game.rock,game.batches.stones);
     material(3,0.f,0.f);instDraw(game.fallenLog,game.batches.logs);
     if(game.collected<RELIC_COUNT){
@@ -698,14 +766,20 @@ static void initialize(){
         LOGE("species %d high: wood %u triangles, leaf %u triangles",
              species,unsigned(model.woodHigh.i.size()/3),unsigned(model.foliageHigh.i.size()/3));
     }
+    ForestUnderstoryMesh undergrowth=buildForestUnderstory();
+    game.shrubBranches=makeMesh(undergrowth.twig);
+    game.shrubLeaflets=makeMesh(undergrowth.shrub);
+    game.fernFronds=makeMesh(undergrowth.fern);
+    game.groundSeedlings=makeMesh(undergrowth.broadGroundPlant);
     game.grass=makeMesh(makeCards(.8f,1.3f,2));
     game.shrub=makeMesh(makeCards(1.6f,1.5f,3));
     game.rock=makeMesh(forestRockMesh());game.fallenLog=makeMesh(forestFallenLog());
     game.shadow=makeMesh(makeShadow());game.crystal=makeMesh(makeCrystal());
     for(auto &t:game.tex)t=createTexture();
+    game.windTex=createTexture();
     game.ready=true;
     glDisable(GL_CULL_FACE);
-    LOGE("Engine ready: forest 5 species x 3 LOD, branched meshes, 19 PBR-inspired material slots");
+    LOGE("Engine ready: Graphics 5 dense undergrowth, unified foliage atlas and Vulkan compute wind");
 }
 extern "C" JNIEXPORT void JNICALL
 Java_com_florestaviva_game_MainActivity_nativeCreate(JNIEnv*,jclass){initialize();}
@@ -713,6 +787,38 @@ extern "C" JNIEXPORT void JNICALL
 Java_com_florestaviva_game_MainActivity_nativeSetGraphicsQuality(JNIEnv*,jclass,jint value){
     game.graphicsQuality=std::max(0,std::min(2,int(value)));
 }
+
+// Vulkan compute pipeline is implemented in vulkan_wind.cpp.
+// Runtime fallback is deterministic CPU noise so Vulkan is optional.
+bool bakeVulkanWindField(AAssetManager* manager,std::vector<uint8_t>& rgba,std::string& gpu);
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_florestaviva_game_MainActivity_nativeBakeWind(JNIEnv*env,jclass,jobject assetManager){
+    if(!game.ready)return env->NewStringUTF("Engine not ready");
+    AAssetManager* assets=AAssetManager_fromJava(env,assetManager);
+    std::vector<uint8_t> bytes;
+    std::string gpu;
+    const bool vulkan=bakeVulkanWindField(assets,bytes,gpu);
+    if(!vulkan){
+        bytes.resize(128u*128u*4u);
+        for(int y=0;y<128;y++)for(int x=0;x<128;x++){
+            uint32_t seed=hash32(uint32_t(x)*174763u^uint32_t(y)*93217u);
+            int p=(y*128+x)*4;
+            bytes[p]=uint8_t((seed>>8)&255);
+            bytes[p+1]=uint8_t((seed>>16)&255);
+            bytes[p+2]=uint8_t(seed&255);
+            bytes[p+3]=255;
+        }
+    }
+    game.windVulkan=vulkan;
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D,game.windTex);
+    glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,128,128,0,GL_RGBA,GL_UNSIGNED_BYTE,bytes.data());
+    glGenerateMipmap(GL_TEXTURE_2D);
+    LOGE("wind field: %s %s",vulkan?"Vulkan compute":"CPU fallback",gpu.c_str());
+    return env->NewStringUTF(vulkan?"Vulkan compute GPU: campo de vento pronto":
+                                      "CPU fallback: campo de vento pronto");
+}
+
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_florestaviva_game_MainActivity_nativeVulkanInfo(JNIEnv*env,jclass){
     // Runtime Vulkan capability check. The playable forest currently retains
@@ -749,7 +855,7 @@ Java_com_florestaviva_game_MainActivity_nativeResize(JNIEnv*,jclass,jint w,jint 
 }
 extern "C" JNIEXPORT void JNICALL
 Java_com_florestaviva_game_MainActivity_nativeUploadTexture(JNIEnv*env,jclass,jint index,jobject bitmap){
-    if(index<0||index>=19||!bitmap||!game.ready)return;
+    if(index<0||index>=21||!bitmap||!game.ready)return;
     AndroidBitmapInfo info{};
     if(AndroidBitmap_getInfo(env,bitmap,&info)!=ANDROID_BITMAP_RESULT_SUCCESS || info.format!=ANDROID_BITMAP_FORMAT_RGBA_8888)return;
     void* pixels=nullptr;
