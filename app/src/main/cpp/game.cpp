@@ -134,6 +134,7 @@ static void ellipsoid(ModelData& m,Vec3 c,Vec3 scale,int rings=8,int segments=12
 #include "forest_leaf_litter.hpp"
 #include "forest_fauna.hpp"
 #include "forest_river.hpp"
+#include "forest_frustum.hpp"
 #include "forest_biome_props.hpp"
 
 static ModelData makeCards(float width,float h,int crosses){
@@ -176,12 +177,12 @@ precision highp float;
 precision highp sampler2DShadow;
 in vec3 vP;in vec3 vN;in vec2 vUV;
 uniform sampler2D uGrass,uDirt,uMoss,uGrassNormal,uDirtNormal,uMossNormal;
-uniform sampler2D uGrassRough,uDirtRough;
+uniform sampler2D uGrassRough,uDirtRough,uRiverPebbles,uRiverNormal;
 uniform vec3 uEye,uFog,uSun;
 uniform float uLight;
 uniform sampler2DShadow uSunShadow;
 uniform mat4 uSunShadowVP;
-uniform float uShadowsEnabled,uShadowTexel;
+uniform float uShadowsEnabled,uShadowTexel,uShadowQuality;
 out vec4 Frag;
 float visibleSun(vec3 world,vec3 normal){
     if(uShadowsEnabled<.5)return 1.0;
@@ -190,8 +191,15 @@ float visibleSun(vec3 world,vec3 normal){
     if(pos.x<=0.0||pos.x>=1.0||pos.y<=0.0||pos.y>=1.0||pos.z<=0.0||pos.z>=1.0)return 1.0;
     float bias=max(.0005,(1.0-max(dot(normal,normalize(uSun)),0.0))*.0019);
     float sum=0.0;
+    if(uShadowQuality>1.5){
+        for(int y=-1;y<=1;y++)for(int x=-1;x<=1;x++){
+            vec2 off=vec2(float(x),float(y))*uShadowTexel*1.7;
+            sum+=texture(uSunShadow,vec3(pos.xy+off,pos.z-bias));
+        }
+        return sum/9.0;
+    }
     for(int y=0;y<2;y++)for(int x=0;x<2;x++){
-        vec2 off=(vec2(float(x),float(y))-.5)*uShadowTexel*1.8;
+        vec2 off=(vec2(float(x),float(y))-.5)*uShadowTexel*1.7;
         sum+=texture(uSunShadow,vec3(pos.xy+off,pos.z-bias));
     }
     return sum*.25;
@@ -228,20 +236,35 @@ void main(){
     groundColor=mix(groundColor,groundVariation,.16+.10*damp);
     vec3 albedo=mix(groundColor,texture(uMoss,muv).rgb,moss);
     albedo=mix(albedo,texture(uDirt,duv).rgb,dirt);
+    // Scanned river-pebble albedo near water. Uses the SAME projected
+    // distance metric as the CPU's carved banks to prevent water/land gaps.
+    float riverSlope=78.0*.0067*cos(vP.z*.0067)+24.0*.020*cos(vP.z*.020+.47);
+    float riverCenter=38.0+78.0*sin(vP.z*.0067)+24.0*sin(vP.z*.020+.47);
+    float riverWidth=9.2+2.7*sin(vP.z*.013+1.1)+1.1*sin(vP.z*.043);
+    float shoreDistance=abs(vP.x-riverCenter)/sqrt(1.+riverSlope*riverSlope);
+    float wetShore=1.-smoothstep(riverWidth+2.5,riverWidth+10.,shoreDistance);
+    vec2 riverUV=vP.xz*.24;
+    albedo=mix(albedo,texture(uRiverPebbles,riverUV).rgb,wetShore*.83);
     vec2 gn=texture(uGrassNormal,guv).rg*2.0-1.0;
     vec2 mn=texture(uMossNormal,muv).rg*2.0-1.0;
     vec2 dn=texture(uDirtNormal,duv).rg*2.0-1.0;
     vec2 mapXY=mix(mix(gn,mn,moss),dn,dirt);
+    vec2 pebbleXY=texture(uRiverNormal,riverUV).rg*2.0-1.0;
+    mapXY=mix(mapXY,pebbleXY,wetShore*.68);
     vec3 n=normalize(N+vec3(mapXY.x*.72,0.0,mapXY.y*.72));
     float diffuse=max(dot(n,L),0.0);
     float wet=clamp(moss*.4+dirt*.22,0.0,.34);
     float measuredRough=mix(texture(uGrassRough,guv).r,
         texture(uDirtRough,duv).r,dirt);
     float roughness=clamp(mix(measuredRough,.70,moss*.42)-wet*.11,.34,.97);
+    roughness=mix(roughness,.67,wetShore*.82);
     float highlight=ggxSpec(n,V,L,roughness)*diffuse*.30;
     float sunVisibility=visibleSun(vP,n);
-    float ambient=.22+.11*max(n.y,0.0);
-    vec3 rgb=albedo*(ambient+.82*diffuse*uLight*(.23+.77*sunVisibility))+
+    // Outdoor skylight hemisphere in the raster pass: cool upper hemisphere
+    // and warm ground bounce instead of fixed grey ambient everywhere.
+    vec3 ambientHemisphere=mix(vec3(.22,.21,.17),vec3(.29,.34,.37),
+                             clamp(n.y*.5+.5,0.,1.));
+    vec3 rgb=albedo*(ambientHemisphere+.79*diffuse*uLight*(.23+.77*sunVisibility))+
              vec3(highlight*uLight*sunVisibility);
     rgb*=mix(.87,1.09,noise2(vP.xz*.013+vec2(6.1,12.4)));
     rgb*=1.0-.12*smoothstep(.12,.7,slope);
@@ -312,7 +335,7 @@ uniform vec3 uEye,uFog,uSun;
 uniform float uLight,uCutout,uEmissive,uRoughness,uBump,uFoliage,uUseRoughnessMap,uLeafLitter;
 uniform sampler2DShadow uSunShadow;
 uniform mat4 uSunShadowVP;
-uniform float uShadowsEnabled;
+uniform float uShadowsEnabled,uShadowTexel,uShadowQuality;
 out vec4 Frag;
 float specGGX(vec3 N,vec3 V,vec3 L,float roughness){
     vec3 H=normalize(V+L);
@@ -350,12 +373,24 @@ void main(){
         vec4 clip=uSunShadowVP*vec4(vP,1.0);
         vec3 sp=clip.xyz/max(.0001,clip.w)*.5+.5;
         if(all(greaterThan(sp,vec3(0.0)))&&all(lessThan(sp,vec3(1.0)))){
-            visibility=texture(uSunShadow,vec3(sp.xy,sp.z-.0015));
+            float bias=max(.0007,(1.0-max(dot(n,L),0.0))*.0013);
+            if(uFoliage<.5 && uShadowQuality>1.5){
+                float sum=0.0;
+                for(int y=0;y<2;y++)for(int x=0;x<2;x++){
+                    vec2 uvShift=(vec2(float(x),float(y))-.5)*uShadowTexel*1.7;
+                    sum+=texture(uSunShadow,vec3(sp.xy+uvShift,sp.z-bias));
+                }
+                visibility=sum*.25;
+            }else{
+                visibility=texture(uSunShadow,vec3(sp.xy,sp.z-bias));
+            }
         }
     }
     float diff=uFoliage>.5 ? (.43+.57*max(nl*.7+.30,0.0)) : (.26+.78*max(nl,0.0)*uLight);
-    vec3 rgb=s.rgb*diff*(.82+vTint*.33)*
-        mix(1.0,.42+.58*visibility,max(dot(n,L),0.0));
+    vec3 hemisphere=mix(vec3(.72,.67,.56),vec3(.87,.96,1.03),
+                        clamp(n.y*.5+.5,0.,1.));
+    vec3 rgb=s.rgb*diff*(.82+vTint*.33)*hemisphere*
+        mix(1.0,.38+.62*visibility,max(dot(n,L),0.0));
     if(uFoliage>.5){
         float transmission=pow(max(-nl,0.0),1.7)*.23*uLight;
         rgb+=s.rgb*vec3(.38,.60,.18)*transmission;
@@ -591,7 +626,7 @@ struct State {
     int depthMapSize=0;
     bool treeDepthReady=false;
     Mat4 sunShadowMatrix{};
-    GLuint tex[30]{};
+    GLuint tex[31]{};
     GLuint riverProg=0;
     Mesh wildlifeMeshes[3],reedsMesh,flowersMesh;
     std::vector<ForestAnimal> wildlife;
@@ -1004,6 +1039,7 @@ static void bindSunShadow(GLuint programId,int slot){
     glBindTexture(GL_TEXTURE_2D,game.treeDepthTex);
     glUniform1i(glGetUniformLocation(programId,"uSunShadow"),slot);
     glUniform1f(glGetUniformLocation(programId,"uShadowTexel"),1.f/float(game.depthMapSize));
+    glUniform1f(glGetUniformLocation(programId,"uShadowQuality"),float(game.graphicsQuality));
 }
 
 static bool ensurePostFrameBuffer(){
@@ -1111,7 +1147,12 @@ static void draw(float dt){
     glUniform1i(glGetUniformLocation(game.terrainProg,"uGrassRough"),7);
     glActiveTexture(GL_TEXTURE8);glBindTexture(GL_TEXTURE_2D,game.tex[22]);
     glUniform1i(glGetUniformLocation(game.terrainProg,"uDirtRough"),8);
+    glActiveTexture(GL_TEXTURE9);glBindTexture(GL_TEXTURE_2D,game.tex[26]);
+    glUniform1i(glGetUniformLocation(game.terrainProg,"uRiverPebbles"),9);
+    glActiveTexture(GL_TEXTURE10);glBindTexture(GL_TEXTURE_2D,game.tex[30]);
+    glUniform1i(glGetUniformLocation(game.terrainProg,"uRiverNormal"),10);
     for(const auto& pair:game.chunks){const Mesh& m=pair.second.terrain;
+        if(!forestChunkVisible(vp,pair.first))continue;
         glBindVertexArray(m.vao);glDrawElements(GL_TRIANGLES,m.count,GL_UNSIGNED_INT,nullptr);
     }
     glBindVertexArray(0);
@@ -1276,6 +1317,8 @@ static void draw(float dt){
         set3(game.riverProg,"uSun",normalize({.62f,.87f,.33f}));
         set1(game.riverProg,"uTime",game.t);
         set1(game.riverProg,"uLight",light);
+        bindSunShadow(game.riverProg,2);
+        set1(game.riverProg,"uWaterQuality",float(game.graphicsQuality));
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D,game.tex[25]);
         glUniform1i(glGetUniformLocation(game.riverProg,"uWaterNormal"),0);
@@ -1287,7 +1330,7 @@ static void draw(float dt){
         glDepthMask(GL_FALSE);
         for(const auto& pair:game.chunks){
             const Mesh& water=pair.second.river;
-            if(!water.count)continue;
+            if(!water.count || !forestChunkVisible(vp,pair.first))continue;
             glBindVertexArray(water.vao);
             glDrawElements(GL_TRIANGLES,water.count,GL_UNSIGNED_INT,nullptr);
         }
@@ -1345,7 +1388,7 @@ static void initialize(){
     game.windTex=createTexture();
     game.ready=true;
     glDisable(GL_CULL_FACE);
-    LOGE("Engine ready: Graphics 8 meandering river, fauna AI, biomes, missions, jump, arm64");
+    LOGE("Engine ready: Graphics 9 clipped river, scanned pebble PBR, hemispherical raster lighting, frustum culling");
 }
 extern "C" JNIEXPORT void JNICALL
 Java_com_florestaviva_game_MainActivity_nativeCreate(JNIEnv*,jclass){initialize();}
@@ -1421,7 +1464,7 @@ Java_com_florestaviva_game_MainActivity_nativeResize(JNIEnv*,jclass,jint w,jint 
 }
 extern "C" JNIEXPORT void JNICALL
 Java_com_florestaviva_game_MainActivity_nativeUploadTexture(JNIEnv*env,jclass,jint index,jobject bitmap){
-    if(index<0||index>=30||!bitmap||!game.ready)return;
+    if(index<0||index>=31||!bitmap||!game.ready)return;
     AndroidBitmapInfo info{};
     if(AndroidBitmap_getInfo(env,bitmap,&info)!=ANDROID_BITMAP_RESULT_SUCCESS || info.format!=ANDROID_BITMAP_FORMAT_RGBA_8888)return;
     void* pixels=nullptr;
