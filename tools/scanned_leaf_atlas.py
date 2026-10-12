@@ -19,10 +19,13 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageOps
 
-SOURCE = "https://ambientcg.com/get?file=Leaf001_2K-PNG.zip"
+SOURCES = (
+    "https://ambientcg.com/get?file=Leaf001_2K-PNG.zip",
+    "https://ambientcg.com/get?file=LeafSet024_2K-PNG.zip",
+)
 
-def fetch_photos():
-    request = urllib.request.Request(SOURCE, headers={"User-Agent":"FlorestaViva-CC0-Foliage/1.0"})
+def fetch_photos(source):
+    request = urllib.request.Request(source, headers={"User-Agent":"FlorestaViva-CC0-Foliage/1.0"})
     with urllib.request.urlopen(request, timeout=100) as response:
         archive = zipfile.ZipFile(io.BytesIO(response.read()))
     by_name={Path(name).stem.lower():name for name in archive.namelist()}
@@ -56,14 +59,42 @@ def extract_two_leaves(color,opacity,normal):
         out.append((c,n))
     return out
 
+def extract_grid_leaves(color,opacity,normal,rows=3,cols=3):
+    width,height=color.size
+    if width!=height:raise RuntimeError("LeafSet024 grid must be square")
+    items=[]
+    for r in range(rows):
+        for cidx in range(cols):
+            bounds=(width*cidx//cols,height*r//rows,
+                    width*(cidx+1)//cols,height*(r+1)//rows)
+            co=color.crop(bounds)
+            al=opacity.crop(bounds)
+            no=normal.crop(bounds)
+            al=al.point(lambda v:0 if v<14 else (v-14)*255//241)
+            box=al.getbbox()
+            if not box:continue
+            margin=3
+            box=(max(0,box[0]-margin),max(0,box[1]-margin),
+                 min(co.width,box[2]+margin),min(co.height,box[3]+margin))
+            co=co.crop(box).convert("RGBA")
+            no=no.crop(box).convert("RGBA")
+            alpha=al.crop(box)
+            co.putalpha(alpha)
+            no.putalpha(alpha)
+            items.append((co,no))
+    if len(items)<7:raise RuntimeError(f"Expected at least 7 distinct scanned leaves, got {len(items)}")
+    return items
+
 def rotated(pic, degrees, new_size):
     img=pic.resize(new_size,Image.Resampling.LANCZOS)
     return img.rotate(degrees,Image.Resampling.BICUBIC,expand=True)
 
 def bake(assets:Path, size:int=2048):
     if size%4:raise ValueError("Size must be divisible by 4")
-    color,opacity,normal=fetch_photos()
-    photos=extract_two_leaves(color,opacity,normal)
+    baseColor,baseOpacity,baseNormal=fetch_photos(SOURCES[0])
+    setColor,setOpacity,setNormal=fetch_photos(SOURCES[1])
+    photos=(extract_two_leaves(baseColor,baseOpacity,baseNormal)+
+            extract_grid_leaves(setColor,setOpacity,setNormal))
     atlas=Image.new("RGBA",(size,size),(0,0,0,0))
     normals=Image.new("RGBA",(size,size),(128,128,255,0))
     tile=size//4
@@ -79,7 +110,7 @@ def bake(assets:Path, size:int=2048):
             tip=(tile*rng.uniform(.21,.82),tile*rng.uniform(.08,.42))
             stems.line([root,tip],fill=(79,72,33,225),width=max(2,tile//105))
         for b in range(4+cell%3):
-            leafID=(b+cell)%2
+            leafID=(b*7+cell*3)%len(photos)
             c, n=photos[leafID]
             leafh=int(tile*rng.uniform(.33,.55))
             leafw=max(6,int(c.width/c.height*leafh))
@@ -103,10 +134,11 @@ def bake(assets:Path, size:int=2048):
     normals.save(assets/"leaves_normal.png",optimize=True)
     assert atlas.getchannel("A").getbbox()
     (assets/"leaf_asset_source.txt").write_text(
-        "Leaf001 (ambientCG): scanned Color/NormalGL/Opacity, CC0 1.0.\n"
+        "Leaf001 + LeafSet024 (ambientCG), Color/NormalGL/Opacity, CC0 1.0.\n"
         "https://ambientcg.com/view?id=Leaf001\n"
+        "https://ambientcg.com/view?id=LeafSet024\n"
         f"Atlas {size}x{size}, 16 photographed leaf cluster variants.\n")
-    print("Baked REAL SCANNED LEAVES",atlas.size,"from",SOURCE)
+    print("Baked REAL SCANNED LEAVES",len(photos),"specimens",atlas.size,"from",SOURCES)
 
 if __name__=="__main__":
     parser=argparse.ArgumentParser()
