@@ -1242,6 +1242,29 @@ static void draw(float dt){
         material(2,0,0,2.1f,game.t*.75f);
         instDraw(game.crystal,floating);
     }
+    // Soft contact shadows connect moving fauna feet with the ground.
+    if(game.shadowProg){
+        std::vector<Instance> animalShadows;
+        animalShadows.reserve(game.wildlife.size());
+        for(const ForestAnimal& animal:game.wildlife){
+            const float distance=std::hypot(animal.x-game.x,animal.z-game.z);
+            if(distance>80.f)continue;
+            const float scale=animal.species==0?.52f:(animal.species==1?.46f:.34f);
+            animalShadows.push_back({animal.x,height(animal.x,animal.z)+.043f,animal.z,
+                  scale,0.f,0.f,0.f,0.f});
+        }
+        if(!animalShadows.empty()){
+            glUseProgram(game.shadowProg);
+            glUniformMatrix4fv(glGetUniformLocation(game.shadowProg,"uVP"),
+                               1,GL_FALSE,vp.m);
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
+            glDepthMask(GL_FALSE);
+            instDraw(game.shadow,animalShadows);
+            glDepthMask(GL_TRUE);
+            glDisable(GL_BLEND);
+        }
+    }
     // River is transparent; draw after opaque geometry with depth writes off.
     // Masking by the carved terrain avoids a floating blue overlay.
     if(game.riverProg){
