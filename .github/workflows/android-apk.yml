@@ -204,7 +204,7 @@ jobs:
         run: |
           set -euo pipefail
           g++ -std=c++17 -O2 -Wall -Wextra tests/forest_geometry_test.cpp -o /tmp/forest_geometry_test
-          FOREST_EXPORT_DIR="$PWD/build/forest-models" /tmp/forest_geometry_test
+          SCANNED_ASSET_DIR="$PWD/app/src/main/assets" FOREST_EXPORT_DIR="$PWD/build/forest-models" /tmp/forest_geometry_test
           cp app/src/main/assets/{bark,bark_normal,pine_bark,pine_bark_normal,pine_atlas,pine_normal,leaves_atlas,leaves_normal,canopy}.png build/forest-models/
       - name: Validar slots de materiais e reduzir tamanho do APK
         shell: bash

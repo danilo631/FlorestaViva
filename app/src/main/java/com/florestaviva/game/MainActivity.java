@@ -35,6 +35,7 @@ public class MainActivity extends Activity {
                                           boolean running, boolean collect);
     public static native void nativeRender(float frameTime);
     public static native void nativeJump();
+    public static native void nativeLoadScannedModels(android.content.res.AssetManager assets);
     public static native float[] nativeMetrics();
     public static native String nativeStatus();
     public static native float[] nativeMapData();
@@ -148,6 +149,7 @@ public class MainActivity extends Activity {
         private int frames=0;
         @Override public void onSurfaceCreated(GL10 unused, EGLConfig config) {
             nativeCreate();
+            nativeLoadScannedModels(getAssets());
             nativeSetGraphicsQuality(graphicsQuality);
             String saved=getSharedPreferences("floresta_save",MODE_PRIVATE).getString("progress",null);
             if(saved!=null)nativeLoad(saved);

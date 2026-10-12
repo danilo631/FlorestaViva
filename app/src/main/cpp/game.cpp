@@ -141,6 +141,7 @@ static void ellipsoid(ModelData& m,Vec3 c,Vec3 scale,int rings=8,int segments=12
 #include "forest_frustum.hpp"
 #include "forest_biome_props.hpp"
 #include "forest_floor_details.hpp"
+#include "forest_scanned_loader.hpp"
 #include "forest_survival.hpp"
 
 static ModelData makeCards(float width,float h,int crosses){
@@ -736,6 +737,8 @@ struct State {
     uint64_t texBytes[39]{};
     GLuint riverProg=0;
     Mesh wildlifeMeshes[3],reedsMesh,flowersMesh;
+    Mesh scannedStump[3],scannedDeadlog[3];
+    bool scannedStumpReady[3]{},scannedDeadlogReady[3]{};
     std::vector<ForestAnimal> wildlife;
     float animalRespawnT=0.f;
     float feetOffset=0.f,verticalVelocity=0.f;
@@ -1503,7 +1506,26 @@ static void draw(float dt){
     material(5,.38f,.48f);instDraw(game.reedsMesh,nearReeds);
     material(29,.02f,.34f);instDraw(game.flowersMesh,nearFlowers);
     material(17,0.f,0.f);instDraw(game.rock,game.batches.stones);
-    material(3,0.f,0.f);instDraw(game.fallenLog,game.batches.logs);
+    // Distinct licensed CC0 photogrammetry meshes for stumps and fallen wood.
+    // Three LODs selected per instance; old procedural mesh remains fallback
+    // if the source download/conversion failed and assets were absent.
+    std::array<std::vector<Instance>,3> stumpGroups,logGroups;
+    std::vector<Instance> proceduralLogs;
+    for(const Instance& object:game.batches.logs){
+        const float dx=object.x-game.x,dz=object.z-game.z;
+        const float d2=dx*dx+dz*dz;
+        const int lod=d2<38.f*38.f?0:(d2<95.f*95.f?1:2);
+        const bool stump=object.tint>.51f;
+        const bool loaded=stump?game.scannedStumpReady[lod]:game.scannedDeadlogReady[lod];
+        if(!loaded)proceduralLogs.push_back(object);
+        else (stump?stumpGroups[lod]:logGroups[lod]).push_back(object);
+    }
+    material(3,0.f,0.f);
+    for(int lod=0;lod<3;lod++){
+        if(game.scannedStumpReady[lod])instDraw(game.scannedStump[lod],stumpGroups[lod]);
+        if(game.scannedDeadlogReady[lod])instDraw(game.scannedDeadlog[lod],logGroups[lod]);
+    }
+    instDraw(game.fallenLog,proceduralLogs);
     // Autonomous wildlife drawn in three anatomical meshes and fur materials.
     std::array<std::vector<Instance>,3> wildlifeInstances;
     for(const ForestAnimal &a:game.wildlife){
@@ -1613,6 +1635,11 @@ static void initialize(){
     debugMetrics.textureBytes=0;
     game.ready=false;
     game.wildlife.clear();
+    for(int lod=0;lod<3;lod++){
+        game.scannedStump[lod]=Mesh{};
+        game.scannedDeadlog[lod]=Mesh{};
+        game.scannedStumpReady[lod]=game.scannedDeadlogReady[lod]=false;
+    }
     game.terrainProg=program(TERRAIN_VS,TERRAIN_FS);
     game.instProg=program(INST_VS,INST_FS);
     game.shadowProg=program(SHADOW_VS,SHADOW_FS);
@@ -1664,6 +1691,44 @@ static void initialize(){
 }
 extern "C" JNIEXPORT void JNICALL
 Java_com_florestaviva_game_MainActivity_nativeCreate(JNIEnv*,jclass){initialize();}
+static bool importScannedLOD(AAssetManager*manager,const char*filename,Mesh &target){
+    AAsset* file=AAssetManager_open(manager,filename,AASSET_MODE_BUFFER);
+    if(!file)return false;
+    const int64_t length=AAsset_getLength64(file);
+    if(length<128 || length>32*1024*1024){AAsset_close(file);return false;}
+    std::vector<uint8_t> bytes(size_t(length),0);
+    size_t pos=0;
+    while(pos<bytes.size()){
+        const int got=AAsset_read(file,bytes.data()+pos,
+                                  int(std::min<size_t>(bytes.size()-pos,65536)));
+        if(got<=0)break;
+        pos+=size_t(got);
+    }
+    AAsset_close(file);
+    if(pos!=bytes.size())return false;
+    ModelData decoded;
+    if(!forestDecodeScannedMesh(bytes.data(),bytes.size(),decoded))return false;
+    target=makeMesh(decoded);
+    LOGE("GLTF source imported: %s, %zu triangles",filename,decoded.i.size()/3);
+    return target.count>0;
+}
+extern "C" JNIEXPORT void JNICALL
+Java_com_florestaviva_game_MainActivity_nativeLoadScannedModels(
+       JNIEnv*env,jclass,jobject manager){
+    if(!game.ready || !manager)return;
+    AAssetManager*assets=AAssetManager_fromJava(env,manager);
+    if(!assets)return;
+    for(int lod=0;lod<3;lod++){
+        char name[80];
+        std::snprintf(name,sizeof(name),"scanned_stump_lod%d.fvmesh",lod);
+        game.scannedStumpReady[lod]=importScannedLOD(assets,name,game.scannedStump[lod]);
+        std::snprintf(name,sizeof(name),"scanned_deadlog_lod%d.fvmesh",lod);
+        game.scannedDeadlogReady[lod]=importScannedLOD(assets,name,game.scannedDeadlog[lod]);
+    }
+    LOGE("Scanned GLTF-derived model LODs ready: stump %d%d%d, log %d%d%d",
+          int(game.scannedStumpReady[0]),int(game.scannedStumpReady[1]),int(game.scannedStumpReady[2]),
+          int(game.scannedDeadlogReady[0]),int(game.scannedDeadlogReady[1]),int(game.scannedDeadlogReady[2]));
+}
 extern "C" JNIEXPORT void JNICALL
 Java_com_florestaviva_game_MainActivity_nativeSetGraphicsQuality(JNIEnv*,jclass,jint value){
     game.graphicsQuality=std::max(0,std::min(2,int(value)));

@@ -51,6 +51,7 @@ void ellipsoid(ModelData& m,Vec3 center,Vec3 scale,int rings=8,int sectors=12){
 #include "../app/src/main/cpp/forest_biome_props.hpp"
 #include "../app/src/main/cpp/forest_floor_details.hpp"
 #include "../app/src/main/cpp/forest_meshlets.hpp"
+#include "../app/src/main/cpp/forest_scanned_loader.hpp"
 void check(const ModelData& m,const char* name){
     if(m.i.empty()||m.v.empty())throw std::runtime_error(std::string(name)+" empty");
     if(m.i.size()%3)throw std::runtime_error(std::string(name)+" nontriangles");
@@ -122,6 +123,28 @@ int main(){
         const char* exportDir=std::getenv("FOREST_EXPORT_DIR");
         const fs::path output=exportDir?fs::path(exportDir):fs::path();
         if(exportDir){fs::create_directories(output);exportMaterials(output);}
+        if(const char* scans=std::getenv("SCANNED_ASSET_DIR")){
+            size_t loadedCount=0;
+            for(const char* prefix:{"scanned_stump","scanned_deadlog"}){
+                size_t previous=SIZE_MAX;
+                for(int lod=0;lod<3;lod++){
+                    fs::path filename=fs::path(scans)/(std::string(prefix)+"_lod"+std::to_string(lod)+".fvmesh");
+                    std::ifstream f(filename,std::ios::binary);
+                    if(!f)throw std::runtime_error("Missing scanned GLTF model "+filename.string());
+                    std::vector<uint8_t> content((std::istreambuf_iterator<char>(f)),
+                                                  std::istreambuf_iterator<char>());
+                    ModelData model;
+                    if(!forestDecodeScannedMesh(content.data(),content.size(),model))
+                        throw std::runtime_error("Invalid real scanned model: "+filename.string());
+                    check(model,prefix);
+                    if(model.i.size()>=previous)
+                        throw std::runtime_error("Scanned model LOD triangles not decreasing");
+                    previous=model.i.size();loadedCount++;
+                }
+            }
+            if(loadedCount!=6)throw std::runtime_error("Incomplete scanned LOD import");
+            std::cout<<"PASS "<<loadedCount<<" photogrammetry glTF-derived LOD meshes verified\n";
+        }
         size_t total=0;
         std::ofstream meshletsJSON;
         if(exportDir)meshletsJSON.open(output/"meshlet_lod_index.json");
