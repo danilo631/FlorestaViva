@@ -259,12 +259,23 @@ layout(location=1) in vec3 aNormal;
 layout(location=2) in vec2 aUV;
 layout(location=3) in vec4 aInst;
 layout(location=4) in vec4 aMeta;
-uniform mat4 uVP;uniform float uTime,uWind,uSpin,uLeafFlutter;
+uniform mat4 uVP;uniform float uTime,uWind,uSpin,uLeafFlutter,uAnimalGait;
 uniform sampler2D uWindField;
 out vec3 vN,vP;out vec2 vUV;out float vTint,vType;
 void main(){
     float ang=aMeta.x+uSpin,ca=cos(ang),sa=sin(ang);
     vec3 p=aPos*aInst.w;
+    if(uAnimalGait>.0){
+        // Mobile procedural quadruped gait: light hoof swing and limb lift.
+        // Real skeletal locomotion remains a separate animation milestone.
+        float phase=uTime*7.0+aInst.x*.23+aInst.z*.17;
+        float leftRight=sign(aPos.x+.001);
+        float hindFront=sign(aPos.z+.001);
+        float hooves=1.0-smoothstep(.20,.83,aPos.y);
+        float stride=sin(phase+leftRight*1.5708+hindFront*3.14159);
+        p.z+=stride*hooves*.13*aInst.w*uAnimalGait;
+        p.y+=max(0.0,stride)*hooves*.072*aInst.w*uAnimalGait;
+    }
     if(uWind>0.0){
         float phase=uTime*1.08+aInst.x*.13+aInst.z*.17;
         float primary=sin(phase+aPos.y*.32);
@@ -794,6 +805,7 @@ static void material(int index,float cutout,float wind,float emissive=0.f,float 
     set1(game.instProg,"uFoliage",(index==4||index==5||index==6||index==11||index==13)?1.f:0.f);
     set1(game.instProg,"uLeafFlutter",(index==11||index==13)?0.04f:0.f);
     set1(game.instProg,"uLeafLitter",0.f);
+    set1(game.instProg,"uAnimalGait",index==27?1.f:0.f);
 }
 static void simulateWildlife(float dt){
     // Deterministic population around the moving player; persistent agents
