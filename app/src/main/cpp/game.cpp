@@ -140,6 +140,7 @@ static void ellipsoid(ModelData& m,Vec3 c,Vec3 scale,int rings=8,int segments=12
 #include "forest_frustum.hpp"
 #include "forest_biome_props.hpp"
 #include "forest_floor_details.hpp"
+#include "forest_survival.hpp"
 
 static ModelData makeCards(float width,float h,int crosses){
     ModelData m;
@@ -734,6 +735,7 @@ struct State {
     int jumps=0;
     unsigned seenSpecies=0;
     bool reachedRiver=false;
+    ForestSurvival survival{};
     GLuint windTex=0;
     bool windVulkan=false;
     Mesh woodHi[5],woodMid[5],leavesHi[5],leavesMid[5],leavesFar[5];
@@ -1057,7 +1059,9 @@ static void update(float dt){
     Vec3 delta=f*game.moveZ+rt*game.moveX;
     if(dot(delta,delta)>1.f)delta=normalize(delta);
     const bool immersed=riverDistance(game.x,game.z)<riverWidth(game.z)-1.f;
-    float speed=(game.running?7.5f:4.2f)*(immersed?.55f:1.f)*dt;
+    const bool sprinting=game.running && game.survival.canSprint();
+    game.survival.tick(dt,sprinting,immersed);
+    float speed=(sprinting?7.5f:4.2f)*(immersed?.55f:1.f)*dt;
     float nx=clampf(game.x+delta.x*speed,-WORLD_HALF+8,WORLD_HALF-8);
     float nz=clampf(game.z+delta.z*speed,-WORLD_HALF+8,WORLD_HALF-8);
     auto blocked=[&](float px,float pz){
@@ -1074,9 +1078,28 @@ static void update(float dt){
     if(!blocked(nx,game.z))game.x=nx;
     if(!blocked(game.x,nz))game.z=nz;
     if(game.collect){
+        const int before=game.collected;
         for(auto &r:game.relics){
             if(r.picked)continue;
             if(std::hypot(game.x-r.x,game.z-r.z)<3.6f){r.picked=true;game.collected++;break;}
+        }
+        if(game.collected==before && game.survival.gatherCooldown<=.0f){
+            // A single gather action searches nearby pre-generated resources.
+            // No new meshes, allocations, or network activity are required.
+            float best=2.8f*2.8f;
+            int resource=-1;
+            auto scan=[&](const std::vector<Instance>& group,int kind){
+                for(const Instance& obj:group){
+                    float dx=game.x-obj.x,dz=game.z-obj.z;
+                    float ds=dx*dx+dz*dz;
+                    if(ds<best){best=ds;resource=kind;}
+                }
+            };
+            scan(game.batches.logs,0);
+            scan(game.batches.stones,1);
+            scan(game.batches.fern,2);
+            scan(game.batches.flowers,2);
+            if(resource>=0)game.survival.harvest(resource);
         }
     }
     game.collect=false;
@@ -1704,8 +1727,18 @@ Java_com_florestaviva_game_MainActivity_nativeStatus(JNIEnv*env,jclass){
     }else if(game.collected<RELIC_COUNT){
         std::snprintf(buff,sizeof(buff),"MISSAO 4: Fragmentos antigos | %d/%d | %.0f m",
                       game.collected,RELIC_COUNT,minDist);
+    }else if(!game.survival.firstSurvivalGoal()){
+        std::snprintf(buff,sizeof(buff),
+            "MISSAO 5: Coletar madeira %d/2 pedra %d/2 plantas %d/1 | PEGA",
+            game.survival.wood,game.survival.stone,game.survival.herbs);
     }else{
-        std::snprintf(buff,sizeof(buff),"FLORESTA VIVA | EXPLORACAO CONCLUIDA! 4/4 missoes");
+        std::snprintf(buff,sizeof(buff),"FLORESTA VIVA | 5/5 MISSOES CONCLUIDAS");
+    }
+    // HUD retains an at-a-glance survival readout even during missions.
+    const size_t offset=std::strlen(buff);
+    if(offset+46<sizeof(buff)){
+        std::snprintf(buff+offset,sizeof(buff)-offset," | EN %.0f%% AG %.0f%%",
+                      game.survival.stamina,game.survival.hydration);
     }
     return env->NewStringUTF(buff);
 }
@@ -1733,10 +1766,13 @@ extern "C" JNIEXPORT jstring JNICALL
 Java_com_florestaviva_game_MainActivity_nativeSave(JNIEnv*env,jclass){
     unsigned mask=0;
     for(int i=0;i<RELIC_COUNT;i++)if(game.relics[i].picked)mask|=1u<<i;
-    char save[180];
-    std::snprintf(save,sizeof(save),"%.3f %.3f %.4f %.4f %.3f %u %u %u %d",
+    char save[220];
+    std::snprintf(save,sizeof(save),
+                  "%.3f %.3f %.4f %.4f %.3f %u %u %u %d %d %d %d %.1f %.1f",
                   game.x,game.z,game.yaw,game.pitch,game.t,mask,
-                  game.reachedRiver?1u:0u,game.seenSpecies,game.jumps);
+                  game.reachedRiver?1u:0u,game.seenSpecies,game.jumps,
+                  game.survival.wood,game.survival.stone,game.survival.herbs,
+                  game.survival.stamina,game.survival.hydration);
     return env->NewStringUTF(save);
 }
 extern "C" JNIEXPORT void JNICALL
@@ -1746,9 +1782,11 @@ Java_com_florestaviva_game_MainActivity_nativeLoad(JNIEnv*env,jclass,jstring sav
     if(!raw)return;
     float x,z,yaw,pitch,t;
     unsigned mask=0,river=0,seen=0;
-    int jumps=0;
-    int got=std::sscanf(raw,"%f %f %f %f %f %u %u %u %d",
-           &x,&z,&yaw,&pitch,&t,&mask,&river,&seen,&jumps);
+    int jumps=0,wood=0,stone=0,herbs=0;
+    float stamina=100.f,hydration=100.f;
+    int got=std::sscanf(raw,"%f %f %f %f %f %u %u %u %d %d %d %d %f %f",
+           &x,&z,&yaw,&pitch,&t,&mask,&river,&seen,&jumps,
+           &wood,&stone,&herbs,&stamina,&hydration);
     env->ReleaseStringUTFChars(save,raw);
     if(got<6 || !std::isfinite(x)||!std::isfinite(z)||!std::isfinite(yaw)
        ||!std::isfinite(pitch)||!std::isfinite(t)||std::fabs(x)>WORLD_HALF-8
@@ -1759,6 +1797,13 @@ Java_com_florestaviva_game_MainActivity_nativeLoad(JNIEnv*env,jclass,jstring sav
     game.reachedRiver=(got>=7 && river!=0);
     game.seenSpecies=(got>=8 ? seen&7u : 0u);
     game.jumps=(got>=9 ? std::max(0,std::min(999,jumps)) : 0);
+    game.survival.wood=got>=10?std::clamp(wood,0,9999):0;
+    game.survival.stone=got>=11?std::clamp(stone,0,9999):0;
+    game.survival.herbs=got>=12?std::clamp(herbs,0,9999):0;
+    game.survival.stamina=got>=13&&std::isfinite(stamina)?
+        clampf(stamina,0.f,100.f):100.f;
+    game.survival.hydration=got>=14&&std::isfinite(hydration)?
+        clampf(hydration,0.f,100.f):100.f;
     for(int i=0;i<RELIC_COUNT;i++){
         game.relics[i].picked=(mask&(1u<<i))!=0;
         if(game.relics[i].picked)game.collected++;
