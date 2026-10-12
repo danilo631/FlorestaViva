@@ -1328,7 +1328,7 @@ static void draw(float dt){
     const auto cpuStart=std::chrono::steady_clock::now();
     debugMetrics.drawCalls=0;
     debugMetrics.triangles=0;
-    update(dt);streamWorld();
+    update(std::min(dt,.05f));streamWorld();
     if(game.graphicsQuality>0&&game.treeDepthProg)
         castForestShadows(game.batches.broad,game.batches.pine,game.graphicsQuality);
     else game.treeDepthReady=false;

@@ -187,7 +187,9 @@ public class MainActivity extends Activity {
         @Override public void onSurfaceChanged(GL10 unused,int width,int height){nativeResize(width,height);}
         @Override public void onDrawFrame(GL10 unused) {
             long now=System.nanoTime();
-            float dt=Math.min(.05f,(now-lastFrame)/1_000_000_000f);
+            // Preserve real wall-clock frame time for truthful FPS even below 20.
+            // Physics is clamped separately in C++, never in the measurement.
+            float dt=Math.max(.0001f,(now-lastFrame)/1_000_000_000f);
             lastFrame=now;
             Snapshot input=overlay.snapshot();
             nativeInput(input.mx,input.mz,input.lx,input.ly,input.sprint,input.collect);
