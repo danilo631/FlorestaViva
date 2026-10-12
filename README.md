@@ -1,149 +1,113 @@
-# Floresta Viva — exploração 3D Android (C++ / OpenGL ES 3)
+# Floresta Viva — Android ARM64 Survival (C++20 / OpenGL ES 3.0)
 
-**Jogo jogável de exploração em primeira pessoa em uma floresta procedural, com código-fonte incluído.**
+Floresta Viva é um jogo independente de exploração e sobrevivência na floresta.
+O mundo procedural 2.048 × 2.048 m usa *chunks* de 64 m, rio com leito escavado,
+vegetação instanciada, 5 espécies procedurais de árvores, 3 animais procedurais,
+missões, salto, energia e hidratação.
 
-> Importante: este é um jogo independente/protótipo 3D completo no sentido de poder ser aberto e compilado como aplicativo, com loop jogável, controles e objetivo. **Não é uma produção AAA fotorrealista**: as árvores são modelos procedurais e as texturas de base são difusas, criadas por algoritmo. Para aproximar qualidade fotográfica, substitua as texturas e amplie o motor com PBR, mapas normais, sombras e modelos de escaneamento.
+**O projeto não usa Unreal Engine, Nanite, Lumen, ray tracing ou rasterizador
+Vulkan para a cena.** O renderer é OpenGL ES 3.0. Vulkan Compute, quando disponível,
+é utilizado apenas para gerar um campo de vento e tem fallback CPU.
+As texturas fotográficas CC0 são reais; isso **não** torna as malhas procedurais
+automaticamente modelos escaneados.
 
-## O que já funciona
+## Fase 0 — Auditoria e métricas
 
-- Terreno de **2.048 × 2.048 metros** (aproximadamente **4,19 km²**).
-- Geração determinística de relevo, gramado, árvores largas, pinheiros, pedras e arbustos.
-- Streaming de blocos de terreno **64 × 64 m**, renderizando somente os blocos ao redor da câmera.
-- Renderização com **OpenGL ES 3.0** por **C++17/Android NDK**, index buffers e desenho instanciado para vegetação.
-- **7 texturas PNG** integradas ao APK, sem downloads em tempo de execução.
-- Vegetação cutout com transparência, balanço de folhas, iluminação difusa, névoa e ciclo lento de luz.
-- Câmera em primeira pessoa, movimento, corrida, obstáculos nos troncos e limites no mapa.
-- Missão: encontre e colete **6 fragmentos**, com contador, distância ao mais próximo e minimapa.
-- Controles por toque com joystick, área de arrastar câmera, botões **CORRER** e **PEGAR**.
-- Salvamento local automático de posição, direção e fragmentos coletados, usando preferências privadas do Android.
-- Funcionamento **offline**, sem contas e sem permissões de internet.
+[Relatório de auditoria](docs/PHASE_0_AUDIT.md).
 
-## Estrutura do projeto
+O aplicativo possui overlay em tela e linha de Logcat `METRICS` a cada
+240 quadros:
+- **FPS** filtrado a partir do intervalo dos frames do GLSurfaceView;
+- **CPU ms** do envio de comandos e atualização — não é tempo de GPU;
+- **DC** (draw calls GLES realmente emitidas, contando sombra e pós);
+- **TRI** (triângulos submetidos, incluindo contagem de instâncias);
+- **TEX MiB** (estimativa de upload de bitmaps RGBA8 com mipmaps).
 
-```text
-FlorestaViva/
-├── settings.gradle
-├── build.gradle
-├── gradle.properties
-├── app/
-│   ├── build.gradle
-│   └── src/main/
-│       ├── AndroidManifest.xml
-│       ├── cpp/
-│       │   ├── CMakeLists.txt
-│       │   └── game.cpp                # Motor 3D, mapa, renderizador, gameplay, JNI
-│       ├── java/com/florestaviva/game/
-│       │   └── MainActivity.java      # Android, GLES surface, UI de toque, minimapa
-│       └── assets/
-│           ├── grass.png
-│           ├── soil.png
-│           ├── moss.png
-│           ├── bark.png
-│           ├── canopy.png
-│           ├── blades.png
-│           └── bush.png
-├── tools/
-│   └── generate_textures.py
-└── .github/workflows/
-    └── android-apk.yml                # Compilação automática de APK no GitHub
+Para coletar em um celular:
+```sh
+adb logcat -s FlorestaViva:E | grep METRICS
 ```
 
-## Como compilar no Android Studio (recomendado)
+O usuário informou **60 FPS nas versões anteriores**. Nenhum teste de FPS
+da versão em desenvolvimento foi executado pelo CI em Mali-G57/Adreno 610.
+Nem o overlay nem o CI fornecem `gpu time`, consumo do driver ou energia.
 
-1. Instale uma versão recente do **Android Studio** e tenha o **JDK 17** configurado para o Gradle.
-2. Descompacte `FlorestaViva.zip` e abra a pasta `FlorestaViva` no Android Studio (**Open**).
-3. Permita a sincronização Gradle e a instalação de SDK 35, CMake 3.22.1 e NDK 27.2.12479018, se solicitado.
-4. Conecte um celular Android compatível com OpenGL ES 3.0 (Android 8+, API 26+) com depuração USB, ou use um emulador com aceleração gráfica.
-5. Clique em **Run ▶** para instalar e executar diretamente; ou em **Build → Build Bundle(s) / APK(s) → Build APK(s)**.
-6. Para distribuir o APK de teste, encontre: `app/build/outputs/apk/debug/app-debug.apk`.
+## Fase 1 — Assets verificados, sem substitutos fictícios
 
-**Pelo terminal**, se `gradle` versão 8.7 estiver instalado e o Android SDK configurado:
+O GitHub Actions usa [assets_manifest.json](assets_manifest.json)
+e [tools/fetch_assets.py](tools/fetch_assets.py) para obter material fotográfico
+CC0 pelo serviço oficial **Poly Haven**, validando MD5 de cada fonte e
+registrando SHA256 em `assets_provenance.json`. Sem conexão/checksum válido,
+a build falha. **Powered by Poly Haven** — https://polyhaven.com.
+
+O pipeline gera 1K color + normal OpenGL (XY) + ORM (AO, rugosidade,
+metallic=0), mais mapa original de altura quando disponível. Não se inventa
+relevo a partir de albedo. As texturas de rocha, musgo, solo e madeira
+possuem respostas distintas aos shaders. A casca das três árvores
+broadleaf pode usar três fotografias CC0 diferentes.
+
+[tools/fetch_models.py](tools/fetch_models.py) obtém glTFs CC0
+(`tree_stump_01`, `dead_tree_trunk_02`), checa MD5 de cada arquivo,
+simplifica 3 LODs e converte para um formato binário compacto verificado
+para o Android. O renderer tem fallback seguro para geometrias antigas.
+O carregador é do formato convertido, **não** o cgltf/tinygltf ainda.
+Veja [CREDITS.md](CREDITS.md) para fontes e licenças.
+
+### Antes e depois — alterações de código (não screenshots)
+
+| Item | Graphics 11 | Etapas 0/1 |
+|---|---|---|
+| HUD FPS / draw calls / triângulos | Sem contadores visíveis | Overlay + Logcat implementados |
+| Material base do solo | Foto CC0 em PNG 2K | Nova seleção de fotos CC0 em 1K; integrações sujeitas a CI |
+| Casca de árvores de folhas largas | 1 família principal | 3 famílias de fotos diferenciadas por espécie |
+| Roughness/AO | Mapas rough separados, AO parcial | ORM R=AO, G=rough, B=metal 0; shader utiliza R/G |
+| Objetos escaneados glTF | Nenhum no runtime | Conversor/loader para toco e tronco, 3 LODs; exige verificação CI |
+| Draw calls e triângulos reais | Sem dados | Contadores de GPU commands; números físicos pendentes |
+| FPS Mali-G57/Adreno 610 | 60 informado pelo usuário em outro aparelho/versão | **Ainda não medido** |
+| Screenshots reais no celular | Não anexados | **Pendentes** — preview de materiais não é screenshot |
+
+O maior risco continua sendo excesso de alpha-overdraw, geração/upload de
+chunks na thread gráfica e textura PNG decodificada como RGBA8. **Não há
+ASTC/KTX2 em runtime nesta versão**, nem modelos realistas de fauna importados.
+O pipeline de meshlets gera metadados e LOD, mas não executa Nanite.
+
+## Compilar
+
+Requisitos: Android SDK 35, NDK 28.2.13676358, JDK 17,
+Android Gradle Plugin 8.13.2, Gradle 8.13, Python 3.12 para preparar assets.
+O GitHub Actions instala as ferramentas e prepara assets/GLSL automaticamente.
 
 ```sh
-gradle :app:assembleDebug
+gradle :app:assembleDebug --no-daemon
 ```
 
-Este ZIP não traz APK pré-compilado nem o Android SDK. **Cxxdroid sozinho não constrói este APK Android**: você precisa de SDK/NDK/Gradle ou usar a compilação no GitHub.
+O comando local sem executar primeiro os scripts de assets recompila os
+recursos já existentes no projeto, que podem não ser os materiais mais recentes.
+Use Actions para o pipeline reproduzível. O APK é **somente ARM64-v8a**,
+Android API 26+, assinatura debug para teste (pode não atualizar diretamente
+uma versão com assinatura diferente, exigindo backup do progresso).
 
-## Compilar a partir do celular, pelo GitHub Actions
+A qualidade interna 0/1/2 corresponde a ECO / ALTA / ULTRA;
+os limites de LOD e pós-processamento diferem conforme a qualidade.
+O orçamento-alvo é **30 FPS estáveis** num Android médio, ainda não aferido.
 
-1. Crie um repositório GitHub e envie o **conteúdo descompactado** da pasta `FlorestaViva` (preserve as subpastas, inclusive `.github`).
-2. Na aba **Actions**, selecione **Gerar APK Android**. Se necessário, clique em **Run workflow**.
-3. Após a execução bem-sucedida, baixe o artefato **FlorestaViva-APK** com `app-debug.apk`.
-4. Instale o APK no Android (autorize instalação de fontes externas quando solicitado).
+## Jogo
 
-A primeira compilação pode demorar porque o SDK e dependências precisam ser baixados. Esse fluxo utiliza runners do GitHub; a disponibilidade e limites dependem da conta/repositório.
+Joystick esquerdo = caminhar, lado direito = olhar, botões CORRER, PEGAR e PULAR.
+PEGAR coleta fragmentos e recursos ao lado de troncos/pedras/plantas.
+O rio, cervos, javalis, raposas e missões de exploração permanecem.
+Salvar e carregar são automáticos, e partidas antigas continuam legíveis.
 
-## Controles e missão
+## Rastreabilidade e limitações
 
-- Arraste o joystick esquerdo para caminhar.
-- Deslize no lado direito para olhar ao redor.
-- Segure **CORRER** para se deslocar mais rápido.
-- Aproxime-se de um fragmento luminoso (até ~3,6 m) e toque em **PEGAR**.
-- No minimapa, os pontos amarelos indicam fragmentos; pontos além do alcance aparecem na borda.
-- Colete os seis para terminar a missão. O progresso é salvo automaticamente e restaurado quando o aplicativo abre novamente.
-
-## Ajustar desempenho
-
-Na primeira parte de `app/src/main/cpp/game.cpp`:
-
-| Ajuste | Padrão | Efeito |
-|---|---:|---|
-| `RADIUS` | `3` | 49 blocos de terreno ao redor do jogador; mudar para `2` reduz para 25 blocos |
-| `GRID` | `32` | 32 × 32 células por bloco; 16 reduz geometria do solo |
-| `CHUNK` | `64` | Tamanho de cada bloco em metros; mudar requer rever streaming |
-| `for(int i=0;i<13;i++)` | `13` | Número máximo de árvores geradas por bloco |
-| `for(int i=0;i<235;i++)` | `235` | Número de plantas/arbustos gerados por bloco |
-
-Para aparelhos mais fracos, use raio 2, grama 100 e árvores 8. Quanto maior a densidade, mais trabalho para a GPU. Qualidade e FPS variam conforme aparelho.
-
-## Trocar para texturas fotográficas / PBR
-
-As texturas incluídas são originais e procedurais, **não fotografias nem conjuntos PBR reais**. Você pode substituí-las por texturas com licença compatível, por exemplo do [ambientCG](https://ambientcg.com/) (materiais CC0). Escolha resolução 512 ou 1024 para não sobrecarregar a memória do celular.
-
-- `grass.png`: solo gramado (albedo/diffuse).
-- `soil.png`: terra/pedrinhas.
-- `moss.png`: musgo.
-- `bark.png`: casca do tronco.
-- `canopy.png`: textura opaca de folhas das copas.
-- `blades.png`: **RGBA com transparência**, cartas de grama vistas de lado.
-- `bush.png`: **RGBA com transparência**, folhas e arbustos vistos de lado.
-
-**Atenção:** trocar por mapas de normal ou roughness não produz automaticamente iluminação PBR, pois os shaders atuais usam apenas albedo. Um pipeline PBR precisa de UV, tangentes, normais/mapas e iluminação apropriada. O gerador de texturas original pode ser reexecutado usando:
-
-```sh
-python -m pip install pillow numpy
-python tools/generate_textures.py
-```
-
-O Python só é necessário para **regenerar** as imagens; as imagens prontas estão incluídas no jogo.
-
-## Tecnologias e limitações
-
-- Java é usado somente para `Activity`, tela, entrada por toque e carregamento dos bitmaps.
-- O terreno, a lógica do jogador, a geração procedural, o desenho e a missão são implementados em C++17.
-- O motor usa iluminação difusa + ambiente, névoa, sombreamento de contato simplificado e folhas com alpha-test; **não usa** sombras dinâmicas de alta resolução, iluminação global, HDR ou PBR completo.
-- Sem backend, anúncios, login, assets baixados dinamicamente ou conexão de rede.
-- O executável Android e o desempenho gráfico **não foram testados em dispositivo físico neste ambiente**. O fonte C++ passou por análise de sintaxe com Clang usando cabeçalhos substitutos; isso não equivale a uma compilação NDK/APK nem a um teste funcional da GPU.
-
-## Licença
-
-Código e recursos gerados nesta versão podem ser reutilizados sob os termos do arquivo `LICENSE` (MIT). Para recursos externos futuros, respeite as licenças correspondentes.
-
-
-## Graphics 2.0
-
-Renderização OpenGL ES 3.0 aprimorada: normal mapping gerado das imagens, iluminação especular GGX simplificada, casca de árvore com bump mapping, iluminação de transmissão nas folhas, copas e raízes extras, densidade de vegetação variável e filtro anisotrópico opcional. Não há ray tracing nem PBR medido; estas técnicas são aproximações móveis. Os mapas de normais são gerados no build via Python + Pillow + NumPy pelo workflow.
-
-Para atualizar as cores com as texturas fotográficas da versão 2.0, envie os sete PNGs do pacote FlorestaViva_Graphics_2 para `app/src/main/assets/`. O workflow também funciona com os PNGs antigos caso você ainda não tenha enviado as novas imagens.
-
-
-## Graphics 3.0 — Botanical card atlas and atmospheric sky
-
-* Nearby deciduous trees use foliage cards mapped into a **single 4x4 RGBA atlas** generated from photographed canopy color by tools/foliage_atlas.py; normal atlas is packed to match. No separate PNG per leaf.
-* Two-sided alpha-cutout, wrapping diffuse light and an approximate translucency term in shaders. Procedural gusts and local leaf motion.
-* Distance-based foliage LOD: individual leaves only within 85 m, grass cards only within 75 m. Far silhouettes use closed tree-canopy meshes.
-* Sky: fullscreen shader with atmospheric gradient, solar halo and moving procedural clouds; not a static sky PNG.
-* Vulkan integration is currently **a real physical-device query** via libvulkan, plus Vulkan GLSL shaders compiled into SPIR-V by NDK glslc. **This does not draw the forest with Vulkan**; the playable engine continues to use GLES3 until a compatible VkSurfaceKHR, swapchain, depth buffering, descriptors, Vulkan scene renderer and explicit lifecycle handling have been implemented.
-* Alpha-test overdraw can be expensive on Mali. LOD radii should be benchmarked on a real device.
-* Textures are photography-derived approximations, not scanned PBR or true SSS.
+- CI: [GitHub Actions](https://github.com/danilo631/FlorestaViva/actions)
+- Fontes/licenças: [CREDITS.md](CREDITS.md)
+- Auditoria: [docs/PHASE_0_AUDIT.md](docs/PHASE_0_AUDIT.md)
+- Recursos: [assets_manifest.json](assets_manifest.json)
+- Render atual: OpenGL ES 3, sombra de mapa de profundidade, luz difusa e
+  GGX simplificado, translucidez aproximada de folhas e pós-processamento LDR.
+- Pendente: modelos glTF verdadeiros para todas as árvores e animais, ASTC
+  comprimido carregado em runtime, IBL, CSM, HDR verdadeiro, Hi-Z/GTAO,
+  cenários climáticos completos e benchmark físico verificável.
+- Uma compilação CI `Success` prova compilação e asserts; não prova qualidade
+  fotorrealista, consumo térmico ou 30/60 FPS no aparelho.
