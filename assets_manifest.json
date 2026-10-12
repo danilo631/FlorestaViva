@@ -21,7 +21,14 @@
       "optional_maps": [
         "disp"
       ],
-      "checksum_policy": "API md5 required; download SHA256 written to build manifest"
+      "checksum_policy": "API md5 required; download SHA256 written to build manifest",
+      "sha256_source": {
+        "diff": "3dd6875cb3908e022a3c45ebbffa5e84c670ff2691fbbb6dc9ea4bff88523800",
+        "nor_gl": "32528a7cdee962cc0b248ee4023a74d0df175737ea90e1eb425122351e0bdab4",
+        "rough": "30d8b56a03d7b12da16f58011b675662a40e58e1cdc768119a5f03968140058c",
+        "ao": "a3632232fa080e28239d456526a3f0c83e0a404515581339b9d6633324dca6a4",
+        "disp": "a1ce10a2426d20d7fec2e48efa255638055922c809ff3ea03067257c0a594953"
+      }
     },
     {
       "id": "leaves_forest_ground",
@@ -40,7 +47,14 @@
       "optional_maps": [
         "disp"
       ],
-      "checksum_policy": "API md5 required; download SHA256 written to build manifest"
+      "checksum_policy": "API md5 required; download SHA256 written to build manifest",
+      "sha256_source": {
+        "diff": "e4aa2be8f80192378bc8aca363fc01b1f01639ebea5a87a3973c549861a01b7a",
+        "nor_gl": "78b24836c2a1ddcfbd81a493de89ee0722319187b39016022a21e63d710c9284",
+        "rough": "e035404a2e16ac23782145b4aa29fb1b923569b2bbb8f6c6c01e194ade37f505",
+        "ao": "6fb25b448bac443f716a0bf5f84f499bddd2d7cbb3afc32f6e99f472a685c335",
+        "disp": "305aded33a25e27b9c27e79cc8a25fe8447e9c6e604e07550698b4b29c8083f0"
+      }
     },
     {
       "id": "forest_leaves_02",
@@ -59,7 +73,14 @@
       "optional_maps": [
         "disp"
       ],
-      "checksum_policy": "API md5 required; download SHA256 written to build manifest"
+      "checksum_policy": "API md5 required; download SHA256 written to build manifest",
+      "sha256_source": {
+        "diff": "2bac85cdc76927fa7dc311037bbbc4dfa2633ea56eb0a24c9cabe163a68c9aa5",
+        "nor_gl": "cf6a40ab24f44d3e891a92a1c252416ed1192af54ac92a5704bdfbda0805e290",
+        "rough": "3d2163acb9e22801caa4d34cb3e9bb443dfd0e6f2bebbd559c61e9b14f945dd4",
+        "ao": "b11e01b3c5d1ca4e1d4770f7cde2849e60589e37719f8ea667f607c2a07445ed",
+        "disp": "9a350cee97dce5c3a2da7f41c1adc526c4bcb3b47008860a82c27f04f29f2b08"
+      }
     },
     {
       "id": "bark_brown_02",
@@ -78,7 +99,14 @@
       "optional_maps": [
         "disp"
       ],
-      "checksum_policy": "API md5 required; download SHA256 written to build manifest"
+      "checksum_policy": "API md5 required; download SHA256 written to build manifest",
+      "sha256_source": {
+        "diff": "920fa0bed0c9d78c1d530e99795113afd532d7db746de440f4a85d7c83ed0f1a",
+        "nor_gl": "0d5e691e8ad8bcd093a3587887fda2a6b4a948b5708a4f256f7919584c6eb857",
+        "rough": "68125592de36e15bae7aa6db85c4d135aeb7e5653199ba226483a70f6d69837d",
+        "ao": "f3572613f143ca84885f4b4e03332d9a8723420c740a12750ab538fad7f39552",
+        "disp": "03a771fd43038257bffc2ebdd12e5599ebba8a30ffae2ed4774c05e4bbab4e45"
+      }
     },
     {
       "id": "pine_bark",
@@ -97,7 +125,14 @@
       "optional_maps": [
         "disp"
       ],
-      "checksum_policy": "API md5 required; download SHA256 written to build manifest"
+      "checksum_policy": "API md5 required; download SHA256 written to build manifest",
+      "sha256_source": {
+        "diff": "89ddfbff0388d30caff902ba600cdf75eb1e651ca71ece6594b5a9b27abb47ab",
+        "nor_gl": "666e5f175a010f12577687dd8029125bff99110e6a97958afb295b34266437db",
+        "rough": "04f466447098d0b6d3d4abdc69ce5766d5da67eedfa076e4a3f22fe6996a60a8",
+        "ao": "10dc4aba5e505b28ed3cfafa7c44309b87a97aa03ad4ed99280361a77c10bb44",
+        "disp": "c60297bdf591983f2d2fa69066ba3a6556d79011780bf0f950a2f5194b5978d1"
+      }
     },
     {
       "id": "mossy_rock",
@@ -116,7 +151,14 @@
       "optional_maps": [
         "disp"
       ],
-      "checksum_policy": "API md5 required; download SHA256 written to build manifest"
+      "checksum_policy": "API md5 required; download SHA256 written to build manifest",
+      "sha256_source": {
+        "diff": "4dbf37f1b0465c9c8914213163923be159716f5b97fb6946437b6c5e143ef540",
+        "nor_gl": "232cdd6a9fdfd01bb8bb1f8f604c53dbca79fa0d3d7995edf85c9945757aa8df",
+        "rough": "0a18bdeb08444b730170b0477f13940ce6cd4d82d06137df661f96d1e2a6a66e",
+        "ao": "00856838c04dfc778dd830d6e92d0f77effb8286c32d8068f2cf48a02a31cdaa",
+        "disp": "593ed7b5d842d1306e8d6094ac9f509af7616bed69af5ad26a5d46c651230149"
+      }
     },
     {
       "id": "clean_pebbles",
@@ -135,7 +177,14 @@
       "optional_maps": [
         "disp"
       ],
-      "checksum_policy": "API md5 required; download SHA256 written to build manifest"
+      "checksum_policy": "API md5 required; download SHA256 written to build manifest",
+      "sha256_source": {
+        "diff": "902b115c4c0ace069862368b751e4799f338164cee62b53b61df3b6994165d95",
+        "nor_gl": "9d8bc7221e200aeff6d7072bb617be7182802b52c9d185e67d1e63e950b09132",
+        "rough": "89dbb0482c9e16de1f501a752c42feaf4e27b8b23a3791ada768e046863ef0e5",
+        "ao": "d87e8532e0e73a5c955c4e8aa6bb6dcadb6d06b4c47b56ef635223f159b2057e",
+        "disp": "55b6508e47845da62379f2eb7d2e87ea79f779dba4e09a969ae04bdad20c57cc"
+      }
     },
     {
       "id": "bark_platanus",
@@ -154,7 +203,14 @@
       "optional_maps": [
         "disp"
       ],
-      "checksum_policy": "API md5 required; download SHA256 written to build manifest"
+      "checksum_policy": "API md5 required; download SHA256 written to build manifest",
+      "sha256_source": {
+        "diff": "4e302eeb6a66d50880484a08bd2c6e43974eb1636397d94d9c8bc54d508c2c1b",
+        "nor_gl": "af36a887dc9cac3ea70902bc6e26b1d3f2608f39f96880f6e7766d93fefe43f5",
+        "rough": "778135a767d90cdcdc486d4351956652c41645b8fd205ee86d73bfd7134bd1de",
+        "ao": "636a056953cfb036a6710f47e7f15fa18ec20caa01e867eb9820b96907f3af22",
+        "disp": "b6fa2f18a1dd977a2baa5b65ddefeb023564325a5dfe57621c6f840d037b5682"
+      }
     },
     {
       "id": "bark_willow",
@@ -173,7 +229,14 @@
       "optional_maps": [
         "disp"
       ],
-      "checksum_policy": "API md5 required; download SHA256 written to build manifest"
+      "checksum_policy": "API md5 required; download SHA256 written to build manifest",
+      "sha256_source": {
+        "diff": "c7de3072c2320934a3d9f5bc6c9cb58819952c0b3bd04f4e71b24cf89dbb6ad6",
+        "nor_gl": "9d5a771315a85c2d890526af9826843e7967ed3330da49bef7e86c3e5a6c0b6a",
+        "rough": "4de7f44cbd2c787555a8504ca35fe2f036a33e4d180d0ee9b17d3c20380ac965",
+        "ao": "d215325fb218b016f4948aae49ff7f2af5d82e4dde5a9e2520d2e361273957d1",
+        "disp": "27308e5e5f9559b1fd08d29427addf5bd3373139bcb241ce7116001014d60c01"
+      }
     }
   ],
   "scanned_foliage": [
