@@ -47,6 +47,7 @@ void ellipsoid(ModelData& m,Vec3 center,Vec3 scale,int rings=8,int sectors=12){
 #include "../app/src/main/cpp/forest_leaf_litter.hpp"
 #include "../app/src/main/cpp/forest_fauna.hpp"
 #include "../app/src/main/cpp/forest_biome_props.hpp"
+#include "../app/src/main/cpp/forest_floor_details.hpp"
 void check(const ModelData& m,const char* name){
     if(m.i.empty()||m.v.empty())throw std::runtime_error(std::string(name)+" empty");
     if(m.i.size()%3)throw std::runtime_error(std::string(name)+" nontriangles");
@@ -162,6 +163,15 @@ int main(){
         std::cout<<"wildlife triangles deer="<<deer.i.size()/3
                  <<" boar="<<boar.i.size()/3
                  <<" fox="<<fox.i.size()/3<<"\n";
+        auto details=forestBuildFloorDetails();
+        check(details.dryTwigs,"3D dry ground twigs");
+        check(details.fungiStems,"3D mushroom stalks");
+        check(details.fungiCaps,"3D mushroom caps");
+        if(details.dryTwigs.i.size()/3<100 || details.fungiCaps.i.size()/3<100)
+            throw std::runtime_error("insufficient groundcover detail");
+        std::cout<<"layer four groundcover triangles: "<<
+            (details.dryTwigs.i.size()+details.fungiStems.i.size()+
+             details.fungiCaps.i.size())/3<<"\n";
         auto rock=forestRockMesh();check(rock,"rock");
         auto log=forestFallenLog();check(log,"fallenLog");
         if(total<12000)throw std::runtime_error("tree meshes unexpectedly low-poly");

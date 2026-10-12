@@ -9,8 +9,8 @@ android {
         applicationId 'com.florestaviva.game'
         minSdk 26
         targetSdk 35
-        versionCode 9
-        versionName '9.0'
+        versionCode 10
+        versionName '10.0'
         externalNativeBuild {
             cmake { cppFlags '-std=c++17 -O3 -ffast-math' }
         }
