@@ -52,11 +52,11 @@ ECO and ALTA avoid this extra per-pixel cost to preserve FPS.
 
 ### 5. Real PBR rock materials
 
-Build pipeline downloads **rock_moss_set_02** from Poly Haven, CC0,
+Build pipeline downloads the **Mossy Rock** PBR texture (asset ID `mossy_rock`) from Poly Haven, CC0,
 with independent 2K color, tangent-space OpenGL normal, and roughness maps.
 These replace synthetic rocks while preserving existing meshes and
 the single installable ARM64 APK.
-Source: https://polyhaven.com/a/rock_moss_set_02
+Source: https://polyhaven.com/a/mossy_rock
 
 ### 6. Validation and size
 

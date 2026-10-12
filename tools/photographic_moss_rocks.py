@@ -1,8 +1,10 @@
 """Build-time licensed photogrammetric mossy rock material (Poly Haven CC0).
 
-The Godot-4-forest-benchmark references rock_moss_set_02 (diff, nor_gl, rough).
+The Godot-4-forest-benchmark references the mossy_rock MODEL.
+We instead use the independent Mossy Rock TEXTURE to avoid depending on
+proprietary model-conversion pipelines and ensure simple stable URL paths.
 We download the original CC0 maps independently, never copy Godot project assets.
-https://polyhaven.com/a/rock_moss_set_02
+https://polyhaven.com/a/mossy_rock
 """
 from pathlib import Path
 import argparse
@@ -11,9 +13,9 @@ import time
 import urllib.request
 from PIL import Image
 
-ROOT="https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/rock_moss_set_02"
+ROOT="https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/mossy_rock"
 def fetch(name):
-    url=f"{ROOT}/rock_moss_set_02_{name}_2k.jpg"
+    url=f"{ROOT}/mossy_rock_{name}_2k.jpg"
     error=None
     for attempt in range(3):
         try:
@@ -39,8 +41,8 @@ def bake(path):
         image.save(temp,format="PNG",optimize=True)
         temp.replace(path/name)
     (path/"rock_photo_source.txt").write_text(
-        "rock_moss_set_02 Poly Haven CC0: diffuse, normal OpenGL, roughness\n"
-        "https://polyhaven.com/a/rock_moss_set_02\n")
+        "mossy_rock Poly Haven CC0: diffuse, normal OpenGL, roughness\n"
+        "https://polyhaven.com/a/mossy_rock\n")
     print("PHOTO ROCK PBR MAPS",[(n,im.size) for n,im in textures])
 
 if __name__=="__main__":
