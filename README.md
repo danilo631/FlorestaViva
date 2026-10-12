@@ -136,3 +136,14 @@ Código e recursos gerados nesta versão podem ser reutilizados sob os termos do
 Renderização OpenGL ES 3.0 aprimorada: normal mapping gerado das imagens, iluminação especular GGX simplificada, casca de árvore com bump mapping, iluminação de transmissão nas folhas, copas e raízes extras, densidade de vegetação variável e filtro anisotrópico opcional. Não há ray tracing nem PBR medido; estas técnicas são aproximações móveis. Os mapas de normais são gerados no build via Python + Pillow + NumPy pelo workflow.
 
 Para atualizar as cores com as texturas fotográficas da versão 2.0, envie os sete PNGs do pacote FlorestaViva_Graphics_2 para `app/src/main/assets/`. O workflow também funciona com os PNGs antigos caso você ainda não tenha enviado as novas imagens.
+
+
+## Graphics 3.0 — Botanical card atlas and atmospheric sky
+
+* Nearby deciduous trees use foliage cards mapped into a **single 4x4 RGBA atlas** generated from photographed canopy color by tools/foliage_atlas.py; normal atlas is packed to match. No separate PNG per leaf.
+* Two-sided alpha-cutout, wrapping diffuse light and an approximate translucency term in shaders. Procedural gusts and local leaf motion.
+* Distance-based foliage LOD: individual leaves only within 85 m, grass cards only within 75 m. Far silhouettes use closed tree-canopy meshes.
+* Sky: fullscreen shader with atmospheric gradient, solar halo and moving procedural clouds; not a static sky PNG.
+* Vulkan integration is currently **a real physical-device query** via libvulkan, plus Vulkan GLSL shaders compiled into SPIR-V by NDK glslc. **This does not draw the forest with Vulkan**; the playable engine continues to use GLES3 until a compatible VkSurfaceKHR, swapchain, depth buffering, descriptors, Vulkan scene renderer and explicit lifecycle handling have been implemented.
+* Alpha-test overdraw can be expensive on Mali. LOD radii should be benchmarked on a real device.
+* Textures are photography-derived approximations, not scanned PBR or true SSS.

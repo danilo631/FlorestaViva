@@ -2,7 +2,9 @@ name: Gerar APK Android
 on:
   workflow_dispatch:
   push:
-    branches: [main, master]
+    branches: [main, master, graphics3-atlas-vulkan-sky]
+  pull_request:
+    branches: [main]
 jobs:
   android:
     runs-on: ubuntu-latest
@@ -19,15 +21,13 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Instalar Android SDK, NDK e CMake
+      - name: Configurar Android SDK e NDK
         shell: bash
         run: |
           set -euo pipefail
-          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          SDK_ROOT="$ANDROID_HOME"
           SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager | sort -V | tail -n 1)"
           test -n "$SDKMANAGER"
-          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
-          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
           "$SDKMANAGER" --sdk_root="$SDK_ROOT" --licenses < <(yes) > /dev/null
           "$SDKMANAGER" --sdk_root="$SDK_ROOT" --install \
             'platforms;android-35' \
@@ -38,15 +38,28 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
-      - name: Gerar mapas de normais
+      - name: Gerar mapas de normais e atlas
+        shell: bash
         run: |
+          set -euo pipefail
           python -m pip install --disable-pip-version-check pillow numpy
           python tools/material_maps.py --size 512
+          python tools/foliage_atlas.py --size 1024
+          python -c "from PIL import Image; a='app/src/main/assets/'; assert Image.open(a+'leaves_atlas.png').size==(1024,1024)"
+      - name: Compilar shaders Vulkan de teste
+        shell: bash
+        run: |
+          set -euo pipefail
+          GLSLC="$(find "$ANDROID_HOME/ndk/27.2.12479018/shader-tools" -type f -name glslc | head -n 1)"
+          test -n "$GLSLC"
+          mkdir -p app/src/main/assets/vulkan
+          "$GLSLC" shaders/foliage.vert -o app/src/main/assets/vulkan/foliage.vert.spv
+          "$GLSLC" shaders/foliage.frag -o app/src/main/assets/vulkan/foliage.frag.spv
       - name: Compilar APK Debug
         run: gradle :app:assembleDebug --stacktrace --no-daemon
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: FlorestaViva-Graphics2-APK
+          name: FlorestaViva-Graphics3-APK
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
