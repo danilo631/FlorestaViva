@@ -1,6 +1,7 @@
 #include "assets/ktx2.hpp"
 #include "renderer/shaders.hpp"
 #include "renderer/metrics.hpp"
+#include "terrain/noise.hpp"
 #include <jni.h>
 #include <android/asset_manager_jni.h>
 #include <android/bitmap.h>
@@ -71,20 +72,6 @@ static Mat4 multiply(const Mat4&a,const Mat4&b){
     for(int c=0;c<4;c++)for(int row=0;row<4;row++)
         for(int k=0;k<4;k++)r.m[c*4+row]+=a.m[k*4+row]*b.m[c*4+k];
     return r;
-}
-static uint32_t hash32(uint32_t x){
-    x^=x>>16;x*=0x7feb352du;x^=x>>15;x*=0x846ca68bu;x^=x>>16;return x;
-}
-static float randCell(int x,int z){
-    uint32_t a=hash32(uint32_t(x)*73856093u ^ uint32_t(z)*19349663u ^ 913547u);
-    return float(a&0xffffffu)/float(0xffffffu);
-}
-static float noise(float x,float z){
-    int ix=int(std::floor(x)),iz=int(std::floor(z)); float fx=x-ix,fz=z-iz;
-    fx=fx*fx*(3-2*fx);fz=fz*fz*(3-2*fz);
-    float a=randCell(ix,iz),b=randCell(ix+1,iz);
-    float c=randCell(ix,iz+1),d=randCell(ix+1,iz+1);
-    return (a+(b-a)*fx)*(1-fz)+(c+(d-c)*fx)*fz;
 }
 #include "forest_ecosystem.hpp"
 static float height(float x,float z){

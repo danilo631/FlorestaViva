@@ -11,6 +11,7 @@ add_library(florestaviva SHARED
     post/post_shaders.cpp
     renderer/shadow_shaders.cpp
     renderer/metrics.cpp
+    terrain/noise.cpp
 )
 target_include_directories(florestaviva PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_features(florestaviva PRIVATE cxx_std_20)
