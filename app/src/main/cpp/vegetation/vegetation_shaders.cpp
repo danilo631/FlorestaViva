@@ -110,7 +110,7 @@ void main(){
     if(uLegacyShading>.5){
         float ndl=max(dot(normalize(vN),normalize(uSun)),0.);
         vec3 legacy=s.rgb*(.28+.72*ndl*uLight)*(.82+vTint*.33);
-        float fade=smoothstep(92.,276.,distance(uEye-vP));
+        float fade=smoothstep(92.,276.,distance(uEye,vP));
         Frag=vec4(mix(legacy,uFog,fade),s.a);
         return;
     }
