@@ -1,5 +1,6 @@
 #include "assets/ktx2.hpp"
 #include "renderer/shaders.hpp"
+#include "renderer/metrics.hpp"
 #include <jni.h>
 #include <android/asset_manager_jni.h>
 #include <android/bitmap.h>
@@ -276,21 +277,6 @@ struct State {
     bool ready=false;
 };
 static State game;
-struct ForestRenderMetrics {
-    uint32_t drawCalls=0;
-    uint64_t triangles=0,textureBytes=0;
-    float fps=0.f,cpuSubmissionMs=0.f;
-    float smoothFps=0.f,smoothCpuMs=0.f;
-    uint32_t frames=0;
-};
-// Counts actual GLES draw calls, including tree shadow passes and postfx;
-// DOES NOT estimate GPU time (that needs GL_EXT_disjoint_timer_query).
-static ForestRenderMetrics debugMetrics;
-static void countDraw(GLsizei indexCount,uint32_t instances=1){
-    debugMetrics.drawCalls++;
-    debugMetrics.triangles+=uint64_t(std::max(indexCount,0))/3*
-                            uint64_t(instances);
-}
 
 static int64_t key(int x,int z){return int64_t((uint64_t(uint32_t(x))<<32)|uint32_t(z));}
 static void freeMesh(Mesh &m){
