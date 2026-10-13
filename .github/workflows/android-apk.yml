@@ -462,9 +462,9 @@ jobs:
           target: default
           arch: x86_64
           profile: pixel_2
-          cores: 2
-          ram-size: 2048M
-          heap-size: 256M
+          cores: 4
+          ram-size: 4096M
+          heap-size: 512M
           emulator-boot-timeout: 420
           disable-animations: true
           emulator-options: -no-window -no-audio -no-snapshot -gpu swiftshader_indirect -no-boot-anim -accel on
