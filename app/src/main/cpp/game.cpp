@@ -1,6 +1,7 @@
 #include "assets/ktx2.hpp"
 #include "renderer/shaders.hpp"
 #include "renderer/metrics.hpp"
+#include "renderer/quality.hpp"
 #include "terrain/noise.hpp"
 #include <jni.h>
 #include <android/asset_manager_jni.h>
@@ -258,7 +259,7 @@ struct State {
     float x=0,z=0,yaw=.35f,pitch=-.06f,t=0;
     float moveX=0,moveZ=0,lookX=0,lookY=0;
     bool running=false,collect=false;
-    int graphicsQuality=1;  // 0 ECO, 1 ALTA, 2 ULTRA
+    int graphicsQuality=1;  // 0 BAIXO, 1 MEDIO, 2 ALTO, 3 ULTRA, 4 LEGACY
     std::array<Relic,RELIC_COUNT> relics{{{38,36},{-96,72},{149,-119},{-200,-176},{299,193},{-370,308}}};
     int collected=0;
     bool ready=false;
@@ -735,7 +736,8 @@ static void bindSunShadow(GLuint programId,int slot){
     glBindTexture(GL_TEXTURE_2D,game.treeDepthTex);
     glUniform1i(glGetUniformLocation(programId,"uSunShadow"),slot);
     glUniform1f(glGetUniformLocation(programId,"uShadowTexel"),1.f/float(game.depthMapSize));
-    glUniform1f(glGetUniformLocation(programId,"uShadowQuality"),float(game.graphicsQuality));
+    glUniform1f(glGetUniformLocation(programId,"uShadowQuality"),
+                forestQuality(game.graphicsQuality).shadowFilterQuality);
 }
 
 static bool ensurePostFrameBuffer(){
@@ -788,8 +790,8 @@ static void presentPostFrame(Vec3 eye){
     glUniform2f(glGetUniformLocation(game.postProg,"uResolution"),
                 float(game.width),float(game.height));
     glUniform1f(glGetUniformLocation(game.postProg,"uQuality"),
-                game.graphicsQuality==2?2.0f:0.0f);
-    const bool shafts=game.graphicsQuality==2 && game.treeDepthReady;
+                forestQuality(game.graphicsQuality).godRays?2.0f:0.0f);
+    const bool shafts=forestQuality(game.graphicsQuality).godRays && game.treeDepthReady;
     glUniform1f(glGetUniformLocation(game.postProg,"uGodRaysEnabled"),
                 shafts?1.f:0.f);
     if(shafts){
@@ -814,10 +816,12 @@ static void draw(float dt){
     debugMetrics.drawCalls=0;
     debugMetrics.triangles=0;
     update(std::min(dt,.05f));streamWorld();
-    if(game.graphicsQuality>0&&game.graphicsQuality<3&&game.treeDepthProg)
-        castForestShadows(game.batches.broad,game.batches.pine,game.graphicsQuality);
+    const ForestQuality& quality=forestQuality(game.graphicsQuality);
+    if(quality.shadows && game.treeDepthProg)
+        castForestShadows(game.batches.broad,game.batches.pine,
+                          int(quality.shadowFilterQuality));
     else game.treeDepthReady=false;
-    const bool usePost=game.graphicsQuality>0&&game.graphicsQuality<3&&ensurePostFrameBuffer();
+    const bool usePost=quality.postFX&&ensurePostFrameBuffer();
     glBindFramebuffer(GL_FRAMEBUFFER,usePost?game.postFbo:0);
     glViewport(0,0,game.width,game.height);
     // Soft daytime colors, with a slowly cycling evening phase.
@@ -847,7 +851,7 @@ static void draw(float dt){
     Mat4 vp=multiply(proj,view);
     glEnable(GL_DEPTH_TEST);glDepthFunc(GL_LEQUAL);glDisable(GL_BLEND);
     common(game.terrainProg,vp,eye,fog,light);
-    set1(game.terrainProg,"uLegacyShading",game.graphicsQuality==3?1.f:0.f);
+    set1(game.terrainProg,"uLegacyShading",quality.legacy?1.f:0.f);
     bindSunShadow(game.terrainProg,6);
     for(int i=0;i<3;i++){
         glActiveTexture(GL_TEXTURE0+i);glBindTexture(GL_TEXTURE_2D,game.tex[i]);
@@ -884,7 +888,7 @@ static void draw(float dt){
     glDisable(GL_BLEND);
     }
     common(game.instProg,vp,eye,fog,light);
-    set1(game.instProg,"uLegacyShading",game.graphicsQuality==3?1.f:0.f);
+    set1(game.instProg,"uLegacyShading",quality.legacy?1.f:0.f);
     bindSunShadow(game.instProg,4);
     glActiveTexture(GL_TEXTURE2);
     glBindTexture(GL_TEXTURE_2D,game.windTex);
@@ -892,10 +896,10 @@ static void draw(float dt){
     set1(game.instProg,"uTime",game.t);
     set3(game.instProg,"uPlayerPosition",Vec3{game.x,height(game.x,game.z),game.z});
     // Quality profiles change both triangle counts and alpha-fragment pressure.
-    const float nearMeters=game.graphicsQuality==0?32.f:(game.graphicsQuality==2?74.f:52.f);
-    const float midMeters=game.graphicsQuality==0?88.f:(game.graphicsQuality==2?155.f:118.f);
-    const float grassMeters=game.graphicsQuality==0?42.f:(game.graphicsQuality==2?107.f:75.f);
-    const float maxMeters=game.graphicsQuality==0?176.f:(game.graphicsQuality==2?250.f:242.f);
+    const float nearMeters=quality.nearMeters;
+    const float midMeters=quality.midMeters;
+    const float grassMeters=quality.grassMeters;
+    const float maxMeters=quality.maxMeters;
     // Tree instancing with separate species meshes and three geometry LODs.
     // Near: complete branched wood and modelled leaf sprigs.
     // Mid: reduced branches/cards. Far: coarse silhouette (no alpha-test forest).
@@ -942,8 +946,8 @@ static void draw(float dt){
     instDraw(game.grass,closeGrass);
     set1(game.instProg,"uInteractiveVegetation",0.f);
     // Sub-canopy LOD: high detail near, compact atlas impostors in the mid range.
-    const float shrubRange=game.graphicsQuality==0?20.f:(game.graphicsQuality==2?45.f:30.f);
-    const float fernRange=game.graphicsQuality==0?22.f:(game.graphicsQuality==2?50.f:35.f);
+    const float shrubRange=quality.shrubMeters;
+    const float fernRange=quality.fernMeters;
     std::vector<Instance> nearShrub,midShrub,nearFern,nearSeedlings;
     nearShrub.reserve(120);midShrub.reserve(240);nearFern.reserve(150);
     auto closeVegetation=[&](const std::vector<Instance>& src,std::vector<Instance>& dst,float reach){
@@ -970,8 +974,7 @@ static void draw(float dt){
     // Layer four: individual wood debris and mushrooms are true mesh details,
     // limited to near-field vegetation to avoid excessive fragment processing.
     std::vector<Instance> localTwigs,localFungi;
-    const float microRange=game.graphicsQuality==0?12.f:
-                           (game.graphicsQuality==2?30.f:22.f);
+    const float microRange=quality.microMeters;
     closeVegetation(game.batches.twigs,localTwigs,microRange);
     closeVegetation(game.batches.fungi,localFungi,microRange*.83f);
     material(3,0.f,0.f);instDraw(game.dryTwigs,localTwigs);
@@ -980,16 +983,15 @@ static void draw(float dt){
     // Near-field separate fallen leaves build actual layers on the forest floor.
     std::vector<Instance> nearLitter;
     nearLitter.reserve(500);
-    const float litterRadius=game.graphicsQuality==2?49.f:
-                            (game.graphicsQuality==0?19.f:32.f);
+    const float litterRadius=quality.litterMeters;
     closeVegetation(game.batches.litter,nearLitter,litterRadius);
     material(11,.33f,.05f);
     set1(game.instProg,"uLeafLitter",1.f);
     instDraw(game.leafLitter,nearLitter);
     set1(game.instProg,"uLeafLitter",0.f);
     std::vector<Instance> nearReeds,nearFlowers;
-    closeVegetation(game.batches.reeds,nearReeds,game.graphicsQuality==2?73.f:47.f);
-    closeVegetation(game.batches.flowers,nearFlowers,game.graphicsQuality==2?60.f:40.f);
+    closeVegetation(game.batches.reeds,nearReeds,quality.reedMeters);
+    closeVegetation(game.batches.flowers,nearFlowers,quality.flowerMeters);
     material(5,.38f,.48f);instDraw(game.reedsMesh,nearReeds);
     material(29,.02f,.34f);instDraw(game.flowersMesh,nearFlowers);
     material(17,0.f,0.f);instDraw(game.rock,game.batches.stones);
@@ -1017,7 +1019,7 @@ static void draw(float dt){
     std::array<std::vector<Instance>,3> wildlifeInstances;
     for(const ForestAnimal &a:game.wildlife){
         const float d=std::hypot(a.x-game.x,a.z-game.z);
-        const float wildlifeRange=game.graphicsQuality==0?75.f:145.f;
+        const float wildlifeRange=quality.wildlifeMeters;
         if(d>wildlifeRange)continue;
         const float bob=.023f*std::sin(a.phase);
         wildlifeInstances[a.species].push_back({a.x,height(a.x,a.z)+bob,a.z,
@@ -1075,7 +1077,7 @@ static void draw(float dt){
         set1(game.riverProg,"uTime",game.t);
         set1(game.riverProg,"uLight",light);
         bindSunShadow(game.riverProg,2);
-        set1(game.riverProg,"uWaterQuality",float(game.graphicsQuality));
+        set1(game.riverProg,"uWaterQuality",quality.waterQuality);
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D,game.tex[25]);
         glUniform1i(glGetUniformLocation(game.riverProg,"uWaterNormal"),0);
@@ -1232,7 +1234,7 @@ Java_com_florestaviva_game_MainActivity_nativeLoadScannedModels(
 }
 extern "C" JNIEXPORT void JNICALL
 Java_com_florestaviva_game_MainActivity_nativeSetGraphicsQuality(JNIEnv*,jclass,jint value){
-    game.graphicsQuality=std::max(0,std::min(3,int(value)));
+    game.graphicsQuality=std::max(0,std::min(4,int(value)));
 }
 
 // Vulkan compute pipeline is implemented in vulkan_wind.cpp.

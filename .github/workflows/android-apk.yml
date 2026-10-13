@@ -308,6 +308,12 @@ jobs:
           # The original source textures remain in Git to regenerate the atlas;
           # only the consolidated atlas and actively used PBR maps enter the APK.
           rm app/src/main/assets/{blades,bush,leaves_atlas,leaves_normal,pine_atlas,pine_normal}.png
+      - name: Testar politica de presets e fallback Legacy
+        shell: bash
+        run: |
+          set -euo pipefail
+          g++ -std=c++20 -O2 -Wall -Wextra tests/quality_test.cpp               app/src/main/cpp/renderer/quality.cpp -I app/src/main/cpp               -o /tmp/forest_quality_test
+          /tmp/forest_quality_test
       - name: Testar mecânicas nativas de sobrevivência
         shell: bash
         run: |

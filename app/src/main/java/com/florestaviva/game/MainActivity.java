@@ -64,7 +64,17 @@ public class MainActivity extends Activity {
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         fullscreen();
         android.util.Log.i("FlorestaViva",nativeVulkanInfo());
-        graphicsQuality=getSharedPreferences("floresta_settings",MODE_PRIVATE).getInt("graphicsQuality",1);
+        android.content.SharedPreferences settings=
+            getSharedPreferences("floresta_settings",MODE_PRIVATE);
+        graphicsQuality=settings.getInt("graphicsQuality",1);
+        if(!settings.getBoolean("quality_schema_v2",false)){
+            // Stored 0/1/2 were ECO/ALTA/ULTRA in Graphics 12.
+            if(graphicsQuality==2)graphicsQuality=3;
+            else if(graphicsQuality==1)graphicsQuality=2;
+            settings.edit().putInt("graphicsQuality",graphicsQuality)
+                    .putBoolean("quality_schema_v2",true).apply();
+        }
+        graphicsQuality=Math.max(0,Math.min(4,graphicsQuality));
         if((getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE)!=0 &&
            getIntent().hasExtra("captureScene")) {
             // Fast, reproducible software-rendered baseline; keep the same
@@ -125,7 +135,7 @@ public class MainActivity extends Activity {
             return true;
         });
         qualityButton.setOnClickListener(v->{
-            graphicsQuality=(graphicsQuality+1)%4;
+            graphicsQuality=(graphicsQuality+1)%5;
             qualityButton.setText(graphicsLabel(graphicsQuality));
             getSharedPreferences("floresta_settings",MODE_PRIVATE).edit()
                 .putInt("graphicsQuality",graphicsQuality).apply();
@@ -135,8 +145,9 @@ public class MainActivity extends Activity {
     }
 
     private static String graphicsLabel(int level){
-        return level==0?"Gráficos: ECO":(level==2?"Gráficos: ULTRA":
-               level==3?"Gráficos: LEGACY":"Gráficos: ALTA");
+        return level==0?"Gráficos: BAIXO":(level==1?"Gráficos: MÉDIO":
+               (level==2?"Gráficos: ALTO":(level==3?"Gráficos: ULTRA":
+                "Gráficos: LEGACY")));
     }
 
     private int dp(float pixels) {return Math.round(pixels*getResources().getDisplayMetrics().density);}
