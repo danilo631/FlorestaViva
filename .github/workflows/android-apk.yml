@@ -7,6 +7,7 @@ on:
     branches: [main]
 permissions:
   contents: write
+  actions: read # required for cross-run download of verified phase-1 baseline screenshots
 jobs:
   android:
     runs-on: ubuntu-latest
