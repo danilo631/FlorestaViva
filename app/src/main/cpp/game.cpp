@@ -814,10 +814,10 @@ static void draw(float dt){
     debugMetrics.drawCalls=0;
     debugMetrics.triangles=0;
     update(std::min(dt,.05f));streamWorld();
-    if(game.graphicsQuality>0&&game.treeDepthProg)
+    if(game.graphicsQuality>0&&game.graphicsQuality<3&&game.treeDepthProg)
         castForestShadows(game.batches.broad,game.batches.pine,game.graphicsQuality);
     else game.treeDepthReady=false;
-    const bool usePost=game.graphicsQuality>0&&ensurePostFrameBuffer();
+    const bool usePost=game.graphicsQuality>0&&game.graphicsQuality<3&&ensurePostFrameBuffer();
     glBindFramebuffer(GL_FRAMEBUFFER,usePost?game.postFbo:0);
     glViewport(0,0,game.width,game.height);
     // Soft daytime colors, with a slowly cycling evening phase.
@@ -847,6 +847,7 @@ static void draw(float dt){
     Mat4 vp=multiply(proj,view);
     glEnable(GL_DEPTH_TEST);glDepthFunc(GL_LEQUAL);glDisable(GL_BLEND);
     common(game.terrainProg,vp,eye,fog,light);
+    set1(game.terrainProg,"uLegacyShading",game.graphicsQuality==3?1.f:0.f);
     bindSunShadow(game.terrainProg,6);
     for(int i=0;i<3;i++){
         glActiveTexture(GL_TEXTURE0+i);glBindTexture(GL_TEXTURE_2D,game.tex[i]);
@@ -883,6 +884,7 @@ static void draw(float dt){
     glDisable(GL_BLEND);
     }
     common(game.instProg,vp,eye,fog,light);
+    set1(game.instProg,"uLegacyShading",game.graphicsQuality==3?1.f:0.f);
     bindSunShadow(game.instProg,4);
     glActiveTexture(GL_TEXTURE2);
     glBindTexture(GL_TEXTURE_2D,game.windTex);
@@ -1230,7 +1232,7 @@ Java_com_florestaviva_game_MainActivity_nativeLoadScannedModels(
 }
 extern "C" JNIEXPORT void JNICALL
 Java_com_florestaviva_game_MainActivity_nativeSetGraphicsQuality(JNIEnv*,jclass,jint value){
-    game.graphicsQuality=std::max(0,std::min(2,int(value)));
+    game.graphicsQuality=std::max(0,std::min(3,int(value)));
 }
 
 // Vulkan compute pipeline is implemented in vulkan_wind.cpp.

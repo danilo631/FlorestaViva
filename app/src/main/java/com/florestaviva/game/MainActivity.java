@@ -118,8 +118,14 @@ public class MainActivity extends Activity {
             Gravity.TOP|Gravity.RIGHT);
         preset.topMargin=dp(5);preset.rightMargin=dp(9);
         layout.addView(qualityButton,preset);
+        // Long-press graphics selector toggles performance metrics.
+        qualityButton.setOnLongClickListener(v->{
+            debugOverlay.setVisibility(debugOverlay.getVisibility()==View.VISIBLE?
+                                        View.GONE:View.VISIBLE);
+            return true;
+        });
         qualityButton.setOnClickListener(v->{
-            graphicsQuality=(graphicsQuality+1)%3;
+            graphicsQuality=(graphicsQuality+1)%4;
             qualityButton.setText(graphicsLabel(graphicsQuality));
             getSharedPreferences("floresta_settings",MODE_PRIVATE).edit()
                 .putInt("graphicsQuality",graphicsQuality).apply();
@@ -129,7 +135,8 @@ public class MainActivity extends Activity {
     }
 
     private static String graphicsLabel(int level){
-        return level==0?"Gráficos: ECO":(level==2?"Gráficos: ULTRA":"Gráficos: ALTA");
+        return level==0?"Gráficos: ECO":(level==2?"Gráficos: ULTRA":
+               level==3?"Gráficos: LEGACY":"Gráficos: ALTA");
     }
 
     private int dp(float pixels) {return Math.round(pixels*getResources().getDisplayMetrics().density);}

@@ -13,6 +13,7 @@ void main(){vP=aPos;vN=aNormal;vUV=aUV;gl_Position=uVP*vec4(aPos,1.0);}
 
 const char* const TERRAIN_FS=R"GLSL(#version 300 es
 precision highp float;
+uniform float uLegacyShading;
 precision highp sampler2DShadow;
 in vec3 vP;in vec3 vN;in vec2 vUV;
 uniform sampler2D uGrass,uDirt,uMoss,uGrassNormal,uDirtNormal,uMossNormal;
@@ -84,6 +85,14 @@ void main(){
     float wetShore=1.-smoothstep(riverWidth+2.5,riverWidth+10.,shoreDistance);
     vec2 riverUV=vP.xz*.24;
     albedo=mix(albedo,texture(uRiverPebbles,riverUV).rgb,wetShore*.83);
+    // Legacy fallback uses albedo-only Lambertian light (not old source images).
+    if(uLegacyShading>.5){
+        float diffuse=max(dot(normalize(vN),L),0.);
+        vec3 legacy=albedo*(.29+.71*diffuse*uLight);
+        float distFog=smoothstep(92.,276.,distance(uEye,vP));
+        Frag=vec4(mix(legacy,uFog,distFog),1.0);
+        return;
+    }
     vec2 gn=texture(uGrassNormal,guv).rg*2.0-1.0;
     vec2 mn=texture(uMossNormal,muv).rg*2.0-1.0;
     vec2 dn=texture(uDirtNormal,duv).rg*2.0-1.0;

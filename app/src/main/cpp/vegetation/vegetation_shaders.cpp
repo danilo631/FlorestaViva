@@ -80,6 +80,7 @@ void main(){
 
 const char* const INST_FS=R"GLSL(#version 300 es
 precision highp float;
+uniform float uLegacyShading;
 precision highp sampler2DShadow;
 in vec3 vN,vP;in vec2 vUV;in float vTint,vType;
 uniform sampler2D uTex,uMaterialNormal,uMaterialRough;
@@ -106,6 +107,13 @@ void main(){
           uAtlasRect.xy+clamp(vUV,vec2(.002),vec2(.998))*uAtlasRect.zw:vUV;
     vec4 s=texture(uTex,uv);
     if(s.a<uCutout)discard;
+    if(uLegacyShading>.5){
+        float ndl=max(dot(normalize(vN),normalize(uSun)),0.);
+        vec3 legacy=s.rgb*(.28+.72*ndl*uLight)*(.82+vTint*.33);
+        float fade=smoothstep(92.,276.,distance(uEye-vP));
+        Frag=vec4(mix(legacy,uFog,fade),s.a);
+        return;
+    }
     vec3 n=normalize(vN),V=normalize(uEye-vP),L=normalize(uSun);
     // Alpha-tested foliage cards are rendered two-sided, including their lighting.
     if(uFoliage>.5 && !gl_FrontFacing)n=-n;
