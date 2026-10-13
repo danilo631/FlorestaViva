@@ -175,6 +175,7 @@ public class MainActivity extends Activity {
     private class GameRenderer implements GLSurfaceView.Renderer {
         private long lastFrame=0;
         private int frames=0;
+        private boolean capturedFirstFrame=false;
         @Override public void onSurfaceCreated(GL10 unused, EGLConfig config) {
             nativeCreate();
             nativeLoadScannedModels(getAssets());
@@ -244,6 +245,16 @@ public class MainActivity extends Activity {
             nativeInput(input.mx,input.mz,input.lx,input.ly,input.sprint,input.collect);
             if(input.jump)nativeJump();
             nativeRender(dt);
+            if(!capturedFirstFrame &&
+               (getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE)!=0 &&
+               getIntent().hasExtra("captureScene")){
+                float[] metrics=nativeMetrics();
+                int scene=getIntent().getIntExtra("captureScene",0);
+                android.util.Log.e("FlorestaViva",String.format(java.util.Locale.US,
+                    "CI_RENDER_FRAME scene=%d fps=%.2f cpuMs=%.2f draws=%.0f tris=%.0f texMiB=%.1f",
+                    scene,metrics[0],metrics[1],metrics[2],metrics[3],metrics[4]));
+                capturedFirstFrame=true;
+            }
             if((frames++%180)==0){
                 getSharedPreferences("floresta_save",MODE_PRIVATE).edit()
                         .putString("progress",nativeSave()).apply();
