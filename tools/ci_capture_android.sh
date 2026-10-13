@@ -19,8 +19,31 @@ adb logcat -c || true
 for scene in 0 1 2 3; do
   adb shell am force-stop com.florestaviva.game || true
   timeout 55s adb shell am start -W -n com.florestaviva.game/.MainActivity --ei captureScene "$scene"
-  sleep 11
+  # SwiftShader may require >30s to create the first valid GLES surface.
+  # Avoid capturing the launcher while Android is still awaiting its first draw.
+  displayed=false
+  for attempt in $(seq 1 21); do
+    sleep 4
+    if ! adb shell pidof com.florestaviva.game | grep -Eq '[0-9]'; then
+      echo "FAIL: app process exited during scene $scene startup (attempt $attempt)" >&2
+      break
+    fi
+    adb shell dumpsys window windows > "build/emulator/scene_${scene}_window.txt" || true
+    if grep -E 'mCurrentFocus|mFocusedApp' "build/emulator/scene_${scene}_window.txt" |
+          grep -q 'com.florestaviva.game'; then
+      displayed=true
+      break
+    fi
+  done
   adb logcat -d -v time > "build/emulator/scene_${scene}_full_logcat.txt" || true
+  if [ "$displayed" != true ]; then
+      echo "FAIL: game never reached foreground surface scene $scene within 84 seconds" >&2
+      grep -E "FATAL EXCEPTION|Fatal signal|AndroidRuntime|am_crash|ANR|OutOfMemory" \
+          "build/emulator/scene_${scene}_full_logcat.txt" | tail -90 || true
+      exit 11
+  fi
+  # Give the raster thread multiple software frames to populate the surface.
+  sleep 5
   if ! adb shell pidof com.florestaviva.game | grep -Eq '[0-9]'; then
       echo "FAIL: Floresta Viva process crashed or exited in scene $scene" >&2
       grep -E "FATAL EXCEPTION|Fatal signal|AndroidRuntime|am_crash|libc:|OutOfMemory"           "build/emulator/scene_${scene}_full_logcat.txt" | tail -80 || true

@@ -496,7 +496,7 @@ jobs:
           emulator-options: -no-window -no-audio -no-snapshot -gpu swiftshader_indirect -no-boot-anim -accel on
           script: |
             if [ "$GITHUB_REF" = "refs/heads/feat/step2-refactor" ]; then export FOREST_CAPTURE_PREFIX=after; fi
-            timeout 360 bash tools/ci_capture_android.sh
+            timeout 700 bash tools/ci_capture_android.sh
       - name: Download approved before screenshots
         if: github.ref == 'refs/heads/feat/step2-refactor'
         uses: actions/download-artifact@v4
