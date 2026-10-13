@@ -39,8 +39,21 @@ for scene in 0 1 2 3; do
           "build/emulator/scene_${scene}_full_logcat.txt" | tail -90 || true
       exit 11
   fi
-  # Give the raster thread multiple software frames to populate the surface.
-  sleep 5
+  # Do not mistake Android's first UI frame for the actual native 3D render.
+  rendered=false
+  for attempt in $(seq 1 15); do
+    if adb logcat -d -s FlorestaViva:E | grep -q "CI_RENDER_FRAME scene=$scene"; then
+        rendered=true
+        break
+    fi
+    sleep 3
+  done
+  if [ "$rendered" != true ]; then
+      echo "FAIL: native GLES renderer never finished frame for scene $scene" >&2
+      adb logcat -d -v time > "build/emulator/scene_${scene}_full_logcat.txt" || true
+      exit 15
+  fi
+  sleep 3
   if ! adb shell pidof com.florestaviva.game | grep -Eq '[0-9]'; then
       echo "FAIL: Floresta Viva exited before scene $scene captured" >&2
       grep -E "FATAL EXCEPTION|Fatal signal|AndroidRuntime|am_crash|libc:|OutOfMemory"           "build/emulator/scene_${scene}_full_logcat.txt" | tail -100 || true
