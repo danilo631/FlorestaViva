@@ -1240,13 +1240,13 @@ Java_com_florestaviva_game_MainActivity_nativeSetGraphicsQuality(JNIEnv*,jclass,
 // Vulkan compute pipeline is implemented in vulkan_wind.cpp.
 // Runtime fallback is deterministic CPU noise so Vulkan is optional.
 bool bakeVulkanWindField(AAssetManager* manager,std::vector<uint8_t>& rgba,std::string& gpu);
-extern "C" JNIEXPORT jstring JNICALL
-Java_com_florestaviva_game_MainActivity_nativeBakeWind(JNIEnv*env,jclass,jobject assetManager){
+static jstring forestBakeWindTexture(JNIEnv*env,AAssetManager*assets,bool allowVulkan){
     if(!game.ready)return env->NewStringUTF("Engine not ready");
-    AAssetManager* assets=AAssetManager_fromJava(env,assetManager);
     std::vector<uint8_t> bytes;
     std::string gpu;
-    const bool vulkan=bakeVulkanWindField(assets,bytes,gpu);
+    // Android emulator SwiftShader may expose partial Vulkan implementations.
+    // Real devices still use the optional Vulkan compute path.
+    const bool vulkan=allowVulkan && bakeVulkanWindField(assets,bytes,gpu);
     if(!vulkan){
         bytes.resize(128u*128u*4u);
         for(int y=0;y<128;y++)for(int x=0;x<128;x++){
@@ -1266,6 +1266,14 @@ Java_com_florestaviva_game_MainActivity_nativeBakeWind(JNIEnv*env,jclass,jobject
     LOGE("wind field: %s %s",vulkan?"Vulkan compute":"CPU fallback",gpu.c_str());
     return env->NewStringUTF(vulkan?"Vulkan compute GPU: campo de vento pronto":
                                       "CPU fallback: campo de vento pronto");
+}
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_florestaviva_game_MainActivity_nativeBakeWind(JNIEnv*env,jclass,jobject manager){
+    return forestBakeWindTexture(env,AAssetManager_fromJava(env,manager),true);
+}
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_florestaviva_game_MainActivity_nativeBakeWindCpuFallback(JNIEnv*env,jclass){
+    return forestBakeWindTexture(env,nullptr,false);
 }
 
 extern "C" JNIEXPORT jstring JNICALL

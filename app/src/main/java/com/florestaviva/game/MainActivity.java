@@ -30,6 +30,7 @@ public class MainActivity extends Activity {
     public static native void nativeSetGraphicsQuality(int level);
     public static native String nativeVulkanInfo();
     public static native String nativeBakeWind(android.content.res.AssetManager assets);
+    public static native String nativeBakeWindCpuFallback();
     public static native void nativeResize(int width, int height);
     public static native void nativeUploadTexture(int index, Bitmap bitmap);
     public static native boolean nativeUploadKtx2Asset(
@@ -224,7 +225,12 @@ public class MainActivity extends Activity {
             android.util.Log.i("FlorestaViva",
               "GPU ASTC KTX2 textures loaded="+compressedCount+
               "; remaining slots use decoded PNG RGBA8 fallback");
-            android.util.Log.i("FlorestaViva",nativeBakeWind(getAssets()));
+            final boolean emulator=
+                android.os.Build.FINGERPRINT.toLowerCase(java.util.Locale.US).contains("generic") ||
+                android.os.Build.HARDWARE.toLowerCase(java.util.Locale.US).contains("ranchu") ||
+                android.os.Build.HARDWARE.toLowerCase(java.util.Locale.US).contains("goldfish");
+            android.util.Log.i("FlorestaViva",
+                emulator?nativeBakeWindCpuFallback():nativeBakeWind(getAssets()));
             lastFrame=System.nanoTime();
         }
         @Override public void onSurfaceChanged(GL10 unused,int width,int height){nativeResize(width,height);}
