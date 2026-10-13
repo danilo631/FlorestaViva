@@ -32,6 +32,32 @@ O usuário informou **60 FPS nas versões anteriores**. Nenhum teste de FPS
 da versão em desenvolvimento foi executado pelo CI em Mali-G57/Adreno 610.
 Nem o overlay nem o CI fornecem `gpu time`, consumo do driver ou energia.
 
+## Etapa 2 — Refatoração modular e presets (em validação)
+
+[Relatório de refatoração](docs/STEP2_REFACTOR.md) ·
+[Tag de rollback `pre-refactor`](https://github.com/danilo631/FlorestaViva/tree/pre-refactor)
+
+Os **11 shaders GLES** agora são compilados em unidades próprias
+(`terrain/`, `vegetation/`, `sky/`, `post/`, `renderer/`),
+com `renderer/shaders.hpp` para as declarações comuns.
+`renderer/metrics.cpp` reúne as métricas e
+`terrain/noise.cpp` preserva o ruído determinístico do mundo.
+`game.cpp` ainda concentra partes do gameplay, da criação de chunks
+e do JNI — **a decomposição do motor está em andamento**, não concluída.
+
+Perfis disponíveis: **BAIXO / MÉDIO / ALTO / ULTRA / LEGACY**.
+O modo LEGACY desativa postFX e sombras avançadas e usa Lambertian
+mais simples; não reinstala as fotografias antigas nem é uma cópia
+pixel a pixel da Graphics 11. Segure o botão de gráficos para
+mostrar ou esconder o overlay de métricas. A preferência gráfica antiga
+é migrada automaticamente para preservar a qualidade selecionada.
+
+Referência visual real: [Etapa 1 — SwiftShader (4 câmeras e vídeo)](https://github.com/danilo631/FlorestaViva/actions/runs/38329848118).
+A comparação com a Etapa 2 aparece como artefato
+`phase2-emulator-after-screenshots-and-video` quando o Actions
+confirmar o build da branch. Essas capturas são de GPU por software,
+não de Mali-G57/Adreno 610.
+
 ## Fase 1 — Assets verificados, sem substitutos fictícios
 
 O GitHub Actions usa [assets_manifest.json](assets_manifest.json)
