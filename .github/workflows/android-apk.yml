@@ -320,7 +320,7 @@ jobs:
           g++ -std=c++17 -O2 -Wall -Wextra tests/river_biome_test.cpp -o /tmp/river_biome_test
           /tmp/river_biome_test
       - name: Compartilhar assets reais para captura Android x86_64
-        if: github.ref == 'refs/heads/feat/step1-audit-assets'
+        if: github.ref == 'refs/heads/feat/step1-audit-assets' || github.ref == 'refs/heads/feat/step2-refactor'
         uses: actions/upload-artifact@v4
         with:
           name: phase1-baked-assets
@@ -419,7 +419,7 @@ jobs:
           git push origin HEAD:refs/heads/feat/step1-audit-assets
 
   capture:
-    if: github.ref == 'refs/heads/feat/step1-audit-assets'
+    if: github.ref == 'refs/heads/feat/step1-audit-assets' || github.ref == 'refs/heads/feat/step2-refactor'
     needs: android
     runs-on: ubuntu-latest
     timeout-minutes: 55
@@ -482,11 +482,26 @@ jobs:
           emulator-boot-timeout: 420
           disable-animations: true
           emulator-options: -no-window -no-audio -no-snapshot -gpu swiftshader_indirect -no-boot-anim -accel on
-          script: timeout 360 bash tools/ci_capture_android.sh
+          script: |
+            if [ "$GITHUB_REF" = "refs/heads/feat/step2-refactor" ]; then export FOREST_CAPTURE_PREFIX=after; fi
+            timeout 360 bash tools/ci_capture_android.sh
+      - name: Download approved before screenshots
+        if: github.ref == 'refs/heads/feat/step2-refactor'
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 38329848118
+          github-token: ${{ github.token }}
+          name: phase1-emulator-before-screenshots-and-video
+          path: build/baseline
+      - name: Record comparable before/after screenshot deltas
+        if: github.ref == 'refs/heads/feat/step2-refactor'
+        shell: bash
+        run: |
+          python tools/compare_emulator_images.py --before build/baseline --after build/emulator
       - name: Upload 4 fixed-camera frames and short screenrecord
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: phase1-emulator-before-screenshots-and-video
+          name: ${{ github.ref == 'refs/heads/feat/step2-refactor' && 'phase2-emulator-after-screenshots-and-video' || 'phase1-emulator-before-screenshots-and-video' }}
           path: build/emulator/
           if-no-files-found: warn

@@ -2,6 +2,8 @@
 # Four deterministic SwiftShader captures of the actual GLES3 game, not atlas previews.
 set -euo pipefail
 mkdir -p build/emulator
+CAPTURE_PREFIX="${FOREST_CAPTURE_PREFIX:-before}"
+if [ "$CAPTURE_PREFIX" != before ] && [ "$CAPTURE_PREFIX" != after ]; then echo "Invalid capture prefix" >&2; exit 1; fi
 trap 'adb logcat -d -v time -s FlorestaViva:E > build/emulator/renderer_metrics_logcat.txt 2>/dev/null || true; adb shell dumpsys gfxinfo com.florestaviva.game > build/emulator/android_gfxinfo.txt 2>/dev/null || true' EXIT
 python -m pip install --disable-pip-version-check pillow
 adb wait-for-device
@@ -15,7 +17,7 @@ for scene in 0 1 2 3; do
   adb shell am force-stop com.florestaviva.game || true
   timeout 55s adb shell am start -W -n com.florestaviva.game/.MainActivity --ei captureScene "$scene"
   sleep 11
-  filename="build/emulator/before_scene_$scene.png"
+  filename="build/emulator/${CAPTURE_PREFIX}_scene_$scene.png"
   timeout 40s adb exec-out screencap -p > "$filename"
   python - "$filename" <<'PY'
 from PIL import Image,ImageStat
@@ -32,8 +34,8 @@ done
 adb shell am force-stop com.florestaviva.game || true
 adb shell am start -W -n com.florestaviva.game/.MainActivity --ei captureScene 0
 sleep 4
-timeout 45s adb shell screenrecord --size 720x1280 --bit-rate 2000000 --time-limit 8 /sdcard/forest_baseline.mp4
-adb pull /sdcard/forest_baseline.mp4 build/emulator/before_walkthrough.mp4
+timeout 45s adb shell screenrecord --size 720x1280 --bit-rate 2000000 --time-limit 8 /sdcard/forest_${CAPTURE_PREFIX}.mp4
+adb pull /sdcard/forest_baseline.mp4 build/emulator/${CAPTURE_PREFIX}_walkthrough.mp4
 test "$(wc -c < build/emulator/before_walkthrough.mp4)" -gt 15000
 adb logcat -d -v time -s FlorestaViva:E > build/emulator/renderer_metrics_logcat.txt || true
 adb shell dumpsys gfxinfo com.florestaviva.game > build/emulator/android_gfxinfo.txt || true
