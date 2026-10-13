@@ -468,7 +468,7 @@ jobs:
           emulator-boot-timeout: 420
           disable-animations: true
           emulator-options: -no-window -no-audio -no-snapshot -gpu swiftshader_indirect -no-boot-anim -accel on
-          script: timeout 360 bash tools/ci_capture_android.sh
+          script: timeout 700 bash tools/ci_capture_android.sh
       - name: Upload 4 fixed-camera frames and short screenrecord
         if: always()
         uses: actions/upload-artifact@v4
