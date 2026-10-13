@@ -46,6 +46,20 @@ jobs:
         with:
           name: phase1-source-audit
           path: build/audit/
+      - name: Tag obrigatoria pre-refactor para rollback
+        if: github.ref == 'refs/heads/feat/step2-refactor'
+        shell: bash
+        run: |
+          set -euo pipefail
+          base=939acb003af5436d4d3abbcbff795440ba74b195
+          if git ls-remote --tags origin refs/tags/pre-refactor | grep -q pre-refactor; then
+            actual="$(git ls-remote --tags origin refs/tags/pre-refactor | cut -f1)"
+            test "$actual" = "$base" || { echo "pre-refactor tag points to unexpected commit"; exit 1; }
+          else
+            git tag pre-refactor "$base"
+            git push origin refs/tags/pre-refactor
+          fi
+          echo "Rollback tag verified: pre-refactor -> $base"
       - name: Configurar Java 17
         uses: actions/setup-java@v4
         with:
