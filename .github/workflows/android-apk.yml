@@ -441,17 +441,34 @@ jobs:
               assert 'lib/x86_64/libflorestaviva.so' in zip.namelist()
           print('PASS debug x86_64 emulator APK, production remains ARM64')
           PY
+      - name: Detect host KVM availability (fast fail if unavailable)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -c /dev/kvm ]; then
+            echo "ERROR: /dev/kvm absent. GitHub hosted runner cannot run this Android emulator in bounded time."
+            exit 2
+          fi
+          sudo chmod a+rw /dev/kvm
+          ls -l /dev/kvm
+          grep -E 'vmx|svm' /proc/cpuinfo | head -1 || true
+          mkdir -p build/emulator
+          printf "Host has KVM; capturing Android x86_64 SwiftShader baseline.\n" > build/emulator/host.txt
       - name: Render screenshots with Android SwiftShader software GPU
-        timeout-minutes: 17
+        timeout-minutes: 16
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 35
-          target: google_apis
+          api-level: 30
+          target: default
           arch: x86_64
-          profile: pixel_6
+          profile: pixel_2
+          cores: 2
+          ram-size: 2048M
+          heap-size: 256M
+          emulator-boot-timeout: 420
           disable-animations: true
-          emulator-options: -no-window -no-audio -no-snapshot -gpu swiftshader_indirect -no-boot-anim
-          script: timeout 600 bash tools/ci_capture_android.sh
+          emulator-options: -no-window -no-audio -no-snapshot -gpu swiftshader_indirect -no-boot-anim -accel on
+          script: timeout 360 bash tools/ci_capture_android.sh
       - name: Upload 4 fixed-camera frames and short screenrecord
         if: always()
         uses: actions/upload-artifact@v4
