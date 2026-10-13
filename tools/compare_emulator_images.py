@@ -6,6 +6,20 @@ from pathlib import Path
 from PIL import Image,ImageChops,ImageStat
 
 def compare(before:Path,after:Path):
+    # Reject screenshots that passed brightness tests but show a crash dialog.
+    # The first baseline artifact was invalid: scenes 2 and 3 had identical
+    # SHA256 because the game process was dead on the Android launcher.
+    import hashlib
+    for directory,prefix in [(before,"before"),(after,"after")]:
+        photos=[directory/f"{prefix}_scene_{i}.png" for i in range(4)]
+        for p in photos:
+            if not p.is_file():
+                raise RuntimeError(f"Missing {prefix} screenshot: {p}")
+        hashes=[hashlib.sha256(p.read_bytes()).hexdigest() for p in photos]
+        if len(set(hashes))<4:
+            raise RuntimeError(f"INVALID {prefix} screenshot baseline: duplicate frames (game may have crashed) {hashes}")
+        if not (directory/"renderer_metrics_logcat.txt").is_file():
+            raise RuntimeError(f"No renderer logcat for {prefix}; cannot verify camera/game status")
     rows=[]
     for i in range(4):
         old=before/f"before_scene_{i}.png"
