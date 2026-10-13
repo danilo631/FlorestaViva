@@ -182,21 +182,26 @@ public class MainActivity extends Activity {
             BitmapFactory.Options opts = new BitmapFactory.Options();
             opts.inScaled = false;
             opts.inPreferredConfig = Bitmap.Config.ARGB_8888;
-            for(int i=0;i<files.length;i++) {
-                if(files[i].isEmpty())continue; // Superseded by unified 2x2 foliage pack.
-                try(InputStream stream=getAssets().open(files[i])) {
-                    Bitmap bitmap=BitmapFactory.decodeStream(stream,null,opts);
-                    if(bitmap!=null){nativeUploadTexture(i,bitmap);bitmap.recycle();}
-                }catch(Exception e){android.util.Log.e("FlorestaViva","Failed texture: "+files[i],e);}
-            }
-            // Prefer real GPU-native ASTC KTX2 when the GLES driver supports it.
-            // Keeping decoded PNGs as fallback is deliberate for SwiftShader,
-            // GPUs without ASTC and corrupt/missing KTX2 assets.
+            // Upload the GPU-native ASTC KTX2 FIRST; do not allocate and
+            // upload a full-size bitmap only to replace it immediately.
+            // PNG is decoded only on GPUs lacking ASTC or missing KTX2.
             int compressedCount=0;
             for(int i=0;i<files.length;i++) {
                 if(files[i].isEmpty())continue;
                 String ktx="ktx2/"+files[i].replace(".png",".ktx2");
-                if(nativeUploadKtx2Asset(getAssets(),i,ktx))compressedCount++;
+                if(nativeUploadKtx2Asset(getAssets(),i,ktx)){
+                    compressedCount++;
+                    continue;
+                }
+                try(InputStream stream=getAssets().open(files[i])) {
+                    Bitmap bitmap=BitmapFactory.decodeStream(stream,null,opts);
+                    if(bitmap!=null){
+                        nativeUploadTexture(i,bitmap);
+                        bitmap.recycle();
+                    }
+                }catch(Exception e){
+                    android.util.Log.e("FlorestaViva","Failed texture: "+files[i],e);
+                }
             }
             android.util.Log.i("FlorestaViva",
               "GPU ASTC KTX2 textures loaded="+compressedCount+
