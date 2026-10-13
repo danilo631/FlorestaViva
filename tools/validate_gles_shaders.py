@@ -8,11 +8,17 @@ import re
 import subprocess
 import tempfile
 import sys
-source=("\n".join(Path(path).read_text() for path in (
+shader_paths=[
     "app/src/main/cpp/game.cpp",
-    "app/src/main/cpp/forest_river.hpp"
-)))
-pattern=r'static const char\* ([A-Z0-9_]+)=R"GLSL\((.*?)\)GLSL";'
+    "app/src/main/cpp/forest_river.hpp",
+    "app/src/main/cpp/terrain/terrain_shaders.cpp",
+    "app/src/main/cpp/vegetation/vegetation_shaders.cpp",
+    "app/src/main/cpp/sky/sky_shaders.cpp",
+    "app/src/main/cpp/post/post_shaders.cpp",
+    "app/src/main/cpp/renderer/shadow_shaders.cpp",
+]
+source="\n".join(Path(path).read_text() for path in shader_paths)
+pattern=r'(?:static )?const char\*(?: const)? ([A-Z0-9_]+)=R"GLSL\((.*?)\)GLSL";'
 shaders=re.findall(pattern,source,re.S)
 if not any(n=="RIVER_VS" for n,_ in shaders) or not any(n=="RIVER_FS" for n,_ in shaders):
     raise SystemExit("river shaders absent from validator")

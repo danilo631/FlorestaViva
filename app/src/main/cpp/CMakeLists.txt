@@ -1,7 +1,17 @@
 cmake_minimum_required(VERSION 3.22.1)
 project(florestaviva LANGUAGES CXX)
 
-add_library(florestaviva SHARED game.cpp vulkan_wind.cpp assets/ktx2.cpp)
+add_library(florestaviva SHARED
+    game.cpp
+    vulkan_wind.cpp
+    assets/ktx2.cpp
+    terrain/terrain_shaders.cpp
+    vegetation/vegetation_shaders.cpp
+    sky/sky_shaders.cpp
+    post/post_shaders.cpp
+    renderer/shadow_shaders.cpp
+)
+target_include_directories(florestaviva PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_features(florestaviva PRIVATE cxx_std_20)
 target_compile_options(florestaviva PRIVATE -Wall -Wextra -O3)
 
